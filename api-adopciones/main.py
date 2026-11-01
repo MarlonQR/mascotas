@@ -46,6 +46,13 @@ app = FastAPI(
                 "Aprobación y rechazo de solicitudes. Ambas operaciones "
                 "actualizan el estado de la mascota en la API de Mascotas."
             )
+        },
+        {
+            "name": "Estadísticas",
+            "description": (
+                "Cifras para el panel de la fundación. Combina las solicitudes "
+                "con el catálogo de la API de Mascotas."
+            )
         }
     ]
 )
@@ -204,6 +211,42 @@ class DecisionRespuesta(BaseModel):
     solicitudes_rechazadas: list[int] = Field(
         default=[],
         description="Otras solicitudes pendientes que se rechazaron al aprobar esta"
+    )
+
+
+class AdopcionesMes(BaseModel):
+    mes: str = Field(description="Año y mes, formato AAAA-MM")
+    total: int
+
+
+class ConteoEspecie(BaseModel):
+    disponible: int = 0
+    en_proceso: int = 0
+    adoptada: int = 0
+
+
+class Estadisticas(BaseModel):
+    solicitudes_total: int
+    solicitudes_pendientes: int
+    solicitudes_aprobadas: int
+    solicitudes_rechazadas: int
+    tasa_aprobacion: Optional[float] = Field(
+        description="Aprobadas sobre resueltas, entre 0 y 1. null si no hay resueltas"
+    )
+    tiempo_promedio_respuesta_horas: Optional[float] = Field(
+        description=(
+            "Horas promedio entre la solicitud y la decisión de la fundación. "
+            "No cuenta los rechazos automáticos. null si no hay decisiones"
+        )
+    )
+    adopciones_por_mes: list[AdopcionesMes] = Field(
+        description="Solicitudes aprobadas en cada uno de los últimos 6 meses"
+    )
+    adopciones_por_especie: dict[str, int] = Field(
+        description="Adopciones aprobadas de perros y de gatos (especie tomada de la API de Mascotas)"
+    )
+    catalogo_por_especie: Optional[dict[str, ConteoEspecie]] = Field(
+        description="Mascotas publicadas por especie y estado. null si la API de Mascotas no respondió"
     )
 
 
@@ -469,6 +512,124 @@ def bloquear_solicitud_pendiente(cursor, id_solicitud):
 # ==================================================
 # 4. ENDPOINTS
 # ==================================================
+
+@app.get(
+    "/estadisticas",
+    response_model=Estadisticas,
+    responses=ERROR_401,
+    dependencies=SOLO_FUNDACION,
+    tags=["Estadísticas"],
+    summary="Cifras del panel de la fundación (requiere clave)",
+    description=(
+        "Calcula las cifras con la tabla de solicitudes y consulta una vez "
+        "`GET /mascotas` en la API de Mascotas para saber la especie de cada "
+        "mascota adoptada y el estado del catálogo."
+    )
+)
+def consultar_estadisticas():
+    conexion = None
+    cursor = None
+
+    try:
+        conexion = obtener_conexion()
+        cursor = conexion.cursor()
+
+        # 1. Solicitudes por estado
+        cursor.execute(
+            "SELECT estado, COUNT(*) FROM solicitudes_adopcion GROUP BY estado;"
+        )
+        por_estado = dict(cursor.fetchall())
+
+        # 2. Tiempo promedio de respuesta, sin los rechazos automáticos
+        cursor.execute(
+            """
+            SELECT AVG(EXTRACT(EPOCH FROM fecha_respuesta - fecha_solicitud)) / 3600
+            FROM solicitudes_adopcion
+            WHERE fecha_respuesta IS NOT NULL
+              AND (observacion IS NULL
+                   OR observacion NOT LIKE 'Rechazada automáticamente%%');
+            """
+        )
+        promedio = cursor.fetchone()[0]
+
+        # 3. Adopciones aprobadas en los últimos 6 meses (hora de Colombia)
+        cursor.execute(
+            """
+            SELECT to_char(meses.mes, 'YYYY-MM'), COUNT(s.id_solicitud)
+            FROM generate_series(
+                date_trunc('month', NOW() AT TIME ZONE 'America/Bogota') - INTERVAL '5 months',
+                date_trunc('month', NOW() AT TIME ZONE 'America/Bogota'),
+                INTERVAL '1 month'
+            ) AS meses (mes)
+            LEFT JOIN solicitudes_adopcion s
+                ON s.estado = 'aprobada'
+               AND date_trunc('month', s.fecha_respuesta AT TIME ZONE 'America/Bogota') = meses.mes
+            GROUP BY meses.mes
+            ORDER BY meses.mes;
+            """
+        )
+        por_mes = [{"mes": mes, "total": total} for mes, total in cursor.fetchall()]
+
+        # 4. Mascotas adoptadas (para cruzar con la especie)
+        cursor.execute(
+            "SELECT id_mascota FROM solicitudes_adopcion WHERE estado = 'aprobada';"
+        )
+        adoptadas = [fila[0] for fila in cursor.fetchall()]
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Error al calcular las estadísticas"
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if conexion:
+            conexion.close()
+
+    # 5. Una sola llamada a la API de Mascotas para las especies y el catálogo
+    try:
+        respuesta = requests.get(f"{API_MASCOTAS_URL}/mascotas", timeout=10)
+        respuesta.raise_for_status()
+        catalogo = respuesta.json()
+    except (requests.RequestException, ValueError):
+        catalogo = None
+
+    especies = {}
+    catalogo_por_especie = None
+
+    if catalogo is not None:
+        especies = {mascota["id_mascota"]: mascota["especie"] for mascota in catalogo}
+        catalogo_por_especie = {"perro": {}, "gato": {}}
+
+        for mascota in catalogo:
+            conteo = catalogo_por_especie.setdefault(mascota["especie"], {})
+            conteo[mascota["estado"]] = conteo.get(mascota["estado"], 0) + 1
+
+    adopciones_por_especie = {"perro": 0, "gato": 0}
+
+    for id_mascota in adoptadas:
+        especie = especies.get(id_mascota, "sin_dato")
+        adopciones_por_especie[especie] = adopciones_por_especie.get(especie, 0) + 1
+
+    aprobadas = por_estado.get("aprobada", 0)
+    rechazadas = por_estado.get("rechazada", 0)
+    resueltas = aprobadas + rechazadas
+
+    return {
+        "solicitudes_total": sum(por_estado.values()),
+        "solicitudes_pendientes": por_estado.get("pendiente", 0),
+        "solicitudes_aprobadas": aprobadas,
+        "solicitudes_rechazadas": rechazadas,
+        "tasa_aprobacion": aprobadas / resueltas if resueltas else None,
+        "tiempo_promedio_respuesta_horas": float(promedio) if promedio is not None else None,
+        "adopciones_por_mes": por_mes,
+        "adopciones_por_especie": adopciones_por_especie,
+        "catalogo_por_especie": catalogo_por_especie
+    }
+
 
 @app.get("/", tags=["Servicio"], summary="Verificar el servicio")
 def inicio():

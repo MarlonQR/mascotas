@@ -74,6 +74,7 @@
                 <a class="pestana" href="#publicaciones" data-vista="publicaciones" data-solo-fundacion hidden>
                     Publicaciones <span id="contador-revision" class="contador-nav" hidden></span>
                 </a>
+                <a class="pestana" href="#estadisticas" data-vista="estadisticas" data-solo-fundacion hidden>Estadísticas</a>
                 <button id="btn-acceso" type="button" class="boton-acceso">Acceso fundación</button>
             </nav>
         </div>
@@ -389,6 +390,9 @@
                 <button type="button" class="chip-filtro" data-estado-publicacion="no_publicada">
                     No publicadas <span class="contador" id="contador-pub-no_publicada">0</span>
                 </button>
+                <button type="button" class="chip-filtro" data-estado-publicacion="retirada">
+                    Retiradas del catálogo <span class="contador" id="contador-pub-retirada">0</span>
+                </button>
             </div>
 
             <div
@@ -403,6 +407,59 @@
             </div>
         </section>
 
+
+        <!-- ========== VISTA 5: ESTADÍSTICAS ========== -->
+        <section id="vista-estadisticas" class="vista" aria-labelledby="titulo-estadisticas" hidden>
+
+            <div class="titulo-seccion">
+                <div>
+                    <h2 id="titulo-estadisticas">Estadísticas de la fundación</h2>
+                    <p>
+                        La API de Adopciones calcula estas cifras con sus solicitudes
+                        y consulta el catálogo en la API de Mascotas.
+                    </p>
+                </div>
+
+                <button id="btn-actualizar-estadisticas" type="button" class="boton boton-secundario">
+                    Actualizar
+                </button>
+            </div>
+
+            <div
+                id="mensaje-estadisticas"
+                class="mensaje"
+                role="status"
+                aria-live="polite"
+            ></div>
+
+            <div id="indicadores" class="indicadores"></div>
+
+            <div class="graficos">
+                <figure class="panel grafico">
+                    <figcaption>
+                        <strong>Adopciones aprobadas por mes</strong>
+                        <span class="texto-secundario">Últimos 6 meses</span>
+                    </figcaption>
+                    <div id="grafico-meses" class="barras-verticales"></div>
+                </figure>
+
+                <figure class="panel grafico">
+                    <figcaption>
+                        <strong>Perros y gatos en el catálogo</strong>
+                        <span class="texto-secundario">Mascotas publicadas por estado</span>
+                    </figcaption>
+                    <div id="leyenda-especies" class="leyenda"></div>
+                    <div id="grafico-especies" class="barras-apiladas"></div>
+                    <p id="resumen-adopciones-especie" class="texto-secundario"></p>
+                </figure>
+            </div>
+
+            <details class="panel tabla-datos">
+                <summary>Ver los datos en tabla</summary>
+                <div id="tablas-estadisticas" class="tabla-contenedor"></div>
+            </details>
+        </section>
+
     </main>
 
 
@@ -415,6 +472,37 @@
 
         <div id="contenido-detalle" class="detalle" aria-live="polite"></div>
 
+        <!-- Solo para la fundación: editar o retirar la mascota -->
+        <div id="gestion-detalle" class="gestion-detalle" hidden>
+            <div class="gestion-botones">
+                <span class="texto-secundario">Fundación:</span>
+                <button id="btn-editar-mascota" type="button" class="boton boton-secundario boton-pequeno">Editar datos</button>
+                <button id="btn-retirar-mascota" type="button" class="boton boton-peligro boton-pequeno">Retirar del catálogo</button>
+            </div>
+
+            <form id="form-retiro" class="retiro" novalidate hidden>
+                <label class="campo">
+                    <span>¿Por qué sale del catálogo?</span>
+                    <select name="razon" required>
+                        <option value="">Selecciona...</option>
+                        <option>Falleció</option>
+                        <option>La reclamó su dueño</option>
+                        <option>Se registró por error</option>
+                        <option>Otro motivo</option>
+                    </select>
+                </label>
+                <label class="campo">
+                    <span>Detalle <small>(opcional)</small></span>
+                    <input name="detalle" type="text" maxlength="400" placeholder="Ej.: el dueño presentó fotos y el carné de vacunas">
+                </label>
+                <p id="error-retiro" class="error-formulario" role="alert"></p>
+                <div class="acciones-formulario">
+                    <button id="btn-cancelar-retiro" type="button" class="boton boton-secundario">Cancelar</button>
+                    <button type="submit" class="boton boton-peligro-solido">Retirar</button>
+                </div>
+            </form>
+        </div>
+
         <div class="detalle-acciones">
             <div class="detalle-navegacion">
                 <button id="btn-detalle-anterior" type="button" class="boton boton-secundario" aria-label="Mascota anterior">← Anterior</button>
@@ -423,6 +511,103 @@
             </div>
             <button id="btn-detalle-adoptar" type="button" class="boton">Quiero adoptarla</button>
         </div>
+    </dialog>
+
+
+    <!-- ========== DIÁLOGO: EDITAR MASCOTA (FUNDACIÓN) ========== -->
+    <dialog id="dialogo-editar" class="dialogo" aria-labelledby="titulo-editar">
+        <form id="form-editar" novalidate>
+            <div class="dialogo-encabezado">
+                <h2 id="titulo-editar">Editar mascota</h2>
+                <button type="button" class="boton-cerrar" data-cerrar aria-label="Cerrar">×</button>
+            </div>
+
+            <div class="campos">
+                <label class="campo">
+                    <span>Nombre</span>
+                    <input name="nombre" type="text" required minlength="2" maxlength="60">
+                </label>
+                <label class="campo">
+                    <span>Especie</span>
+                    <select name="especie" required>
+                        <option value="perro">Perro</option>
+                        <option value="gato">Gato</option>
+                    </select>
+                </label>
+                <label class="campo">
+                    <span>Raza</span>
+                    <input name="raza" type="text" required minlength="2" maxlength="60">
+                </label>
+                <label class="campo">
+                    <span>Sexo</span>
+                    <select name="sexo" required>
+                        <option value="hembra">Hembra</option>
+                        <option value="macho">Macho</option>
+                    </select>
+                </label>
+                <div class="campo">
+                    <span id="etiqueta-edad-editar">Edad aproximada</span>
+                    <div class="campo-doble" role="group" aria-labelledby="etiqueta-edad-editar">
+                        <label>
+                            <input name="anios" type="number" min="0" max="25" required>
+                            <small>años</small>
+                        </label>
+                        <label>
+                            <input name="meses" type="number" min="0" max="11" required>
+                            <small>meses</small>
+                        </label>
+                    </div>
+                </div>
+                <label class="campo">
+                    <span>Tamaño</span>
+                    <select name="tamano" required>
+                        <option value="pequeno">Pequeño</option>
+                        <option value="mediano">Mediano</option>
+                        <option value="grande">Grande</option>
+                    </select>
+                </label>
+                <label class="campo campo-ancho">
+                    <span>Descripción</span>
+                    <textarea name="descripcion" rows="3" maxlength="600"></textarea>
+                </label>
+                <fieldset class="campo-ancho ubicacion" data-ubicacion>
+                    <legend>Ubicación</legend>
+                    <div class="campos-ubicacion">
+                        <label class="campo">
+                            <span>País</span>
+                            <select name="pais" required></select>
+                        </label>
+                        <label class="campo">
+                            <span>Departamento / Estado</span>
+                            <select name="departamento" required></select>
+                            <input name="departamento" type="text" minlength="2" maxlength="80" required hidden disabled>
+                        </label>
+                        <label class="campo">
+                            <span>Municipio / Ciudad</span>
+                            <select name="ciudad" required></select>
+                            <input name="ciudad" type="text" minlength="2" maxlength="80" required hidden disabled>
+                        </label>
+                    </div>
+                </fieldset>
+                <div class="campo campo-ancho casillas">
+                    <label class="casilla">
+                        <input name="vacunado" type="checkbox">
+                        Vacunas al día
+                    </label>
+                    <label class="casilla">
+                        <input name="esterilizado" type="checkbox">
+                        Esterilizado
+                    </label>
+                </div>
+            </div>
+
+            <p id="error-editar" class="error-formulario" role="alert"></p>
+
+            <div class="acciones-formulario">
+                <button type="button" class="boton boton-secundario" data-cerrar>Cancelar</button>
+                <button type="submit" class="boton">Guardar cambios</button>
+            </div>
+        </form>
     </dialog>
 
 

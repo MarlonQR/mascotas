@@ -12,8 +12,9 @@ Sin argumentos usa las variables de entorno API_MASCOTAS_URL,
 API_ADOPCIONES_URL y CLAVE_ADMIN, o las APIs locales (puertos 8001 y 8000).
 La clave es la misma variable CLAVE_ADMIN configurada en las dos APIs.
 
-La prueba crea cuatro mascotas de prueba ("Prueba Uno" a "Prueba Cuatro").
-Las tres primeras terminan adoptadas y la cuarta queda publicada.
+La prueba crea cinco mascotas de prueba ("Prueba Uno" a "Prueba Cinco").
+Las tres primeras terminan adoptadas, la cuarta queda publicada y la quinta
+queda retirada del catálogo.
 """
 
 import os
@@ -400,6 +401,101 @@ def escenario_publicacion_comunidad():
               mostrar(respuesta))
 
 
+def escenario_gestion_y_estadisticas():
+    titulo("5. La fundación edita y retira una mascota, y consulta las estadísticas")
+
+    respuesta = crear_mascota("Prueba Cinco")
+    if not verificar("Registrar mascota", respuesta.status_code == 201, mostrar(respuesta)):
+        return
+
+    id_mascota = respuesta.json()["id_mascota"]
+
+    edicion = {
+        "nombre": "Prueba Cinco",
+        "especie": "perro",
+        "raza": "Criollo",
+        "sexo": "hembra",
+        "edad_meses": 20,
+        "tamano": "grande",
+        "vacunado": True,
+        "esterilizado": True,
+        "descripcion": "Datos corregidos por la prueba de integración.",
+        "pais": "Colombia",
+        "departamento": "Norte de Santander",
+        "ciudad": "Pamplona"
+    }
+
+    respuesta = requests.put(f"{API_MASCOTAS}/mascotas/{id_mascota}", json=edicion, timeout=30)
+    verificar("Sin la clave no se puede editar (401)", respuesta.status_code == 401, mostrar(respuesta))
+
+    respuesta = requests.put(
+        f"{API_MASCOTAS}/mascotas/{id_mascota}", json=edicion, headers=FUNDACION, timeout=30
+    )
+    verificar(
+        "La fundación corrige los datos",
+        respuesta.ok and respuesta.json()["ciudad"] == "Pamplona" and respuesta.json()["sexo"] == "hembra",
+        mostrar(respuesta)
+    )
+
+    solicitud = solicitar(id_mascota, "Andrés Ropero")
+    id_solicitud = solicitud.json()["solicitud"]["id_solicitud"]
+
+    respuesta = requests.patch(
+        f"{API_MASCOTAS}/mascotas/{id_mascota}/retirar",
+        json={"motivo": "Prueba de retiro con solicitudes pendientes"},
+        headers=FUNDACION,
+        timeout=30
+    )
+    verificar("No se puede retirar con solicitudes pendientes (409)",
+              respuesta.status_code == 409, mostrar(respuesta))
+
+    rechazar(id_solicitud)
+
+    respuesta = requests.patch(
+        f"{API_MASCOTAS}/mascotas/{id_mascota}/retirar",
+        json={"motivo": "La reclamó su dueño (prueba de integración)"},
+        headers=FUNDACION,
+        timeout=30
+    )
+    verificar("Después de rechazar la solicitud, sí se puede retirar",
+              respuesta.ok and respuesta.json()["estado"] == "retirada", mostrar(respuesta))
+
+    catalogo = requests.get(f"{API_MASCOTAS}/mascotas", timeout=30).json()
+    verificar("La mascota retirada sale del catálogo",
+              id_mascota not in [m["id_mascota"] for m in catalogo])
+
+    respuesta = solicitar(id_mascota, "Laura Sanjuán")
+    verificar("Una mascota retirada no recibe solicitudes (409)",
+              respuesta.status_code == 409, mostrar(respuesta))
+
+    respuesta = requests.patch(
+        f"{API_MASCOTAS}/mascotas/{id_mascota}/restaurar", headers=FUNDACION, timeout=30
+    )
+    verificar("La fundación la puede volver a publicar",
+              respuesta.ok and estado_mascota(id_mascota) == "disponible", mostrar(respuesta))
+
+    requests.patch(
+        f"{API_MASCOTAS}/mascotas/{id_mascota}/retirar",
+        json={"motivo": "Retirada al terminar la prueba de integración"},
+        headers=FUNDACION,
+        timeout=30
+    )
+
+    respuesta = requests.get(f"{API_ADOPCIONES}/estadisticas", timeout=30)
+    verificar("Sin la clave no se ven las estadísticas (401)", respuesta.status_code == 401, mostrar(respuesta))
+
+    respuesta = requests.get(f"{API_ADOPCIONES}/estadisticas", headers=FUNDACION, timeout=30)
+    datos = respuesta.json() if respuesta.ok else {}
+    verificar(
+        "Las estadísticas cruzan las solicitudes con el catálogo de la API de Mascotas",
+        respuesta.ok
+        and datos.get("solicitudes_aprobadas", 0) >= 3
+        and datos.get("catalogo_por_especie") is not None
+        and len(datos.get("adopciones_por_mes", [])) == 6,
+        f"aprobadas: {datos.get('solicitudes_aprobadas')} · por especie: {datos.get('adopciones_por_especie')}"
+    )
+
+
 # ==================================================
 # 3. EJECUCIÓN
 # ==================================================
@@ -417,6 +513,7 @@ if __name__ == "__main__":
         escenario_rechazo_libera_mascota()
         escenario_aprobaciones_simultaneas()
         escenario_publicacion_comunidad()
+        escenario_gestion_y_estadisticas()
 
     correctas = sum(resultados)
     print()
