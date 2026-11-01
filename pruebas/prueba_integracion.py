@@ -6,10 +6,11 @@ paso. Sirve como evidencia de que los dos servicios se comunican.
 
 Uso:
     python prueba_integracion.py
-    python prueba_integracion.py <url_api_mascotas> <url_api_adopciones>
+    python prueba_integracion.py <url_api_mascotas> <url_api_adopciones> <clave_admin>
 
-Sin argumentos usa las variables de entorno API_MASCOTAS_URL y
-API_ADOPCIONES_URL, o las APIs locales (puertos 8001 y 8000).
+Sin argumentos usa las variables de entorno API_MASCOTAS_URL,
+API_ADOPCIONES_URL y CLAVE_ADMIN, o las APIs locales (puertos 8001 y 8000).
+La clave es la misma variable CLAVE_ADMIN configurada en las dos APIs.
 
 La prueba crea tres mascotas de prueba y termina con las tres adoptadas.
 """
@@ -31,6 +32,14 @@ API_ADOPCIONES = (
     sys.argv[2] if len(sys.argv) > 2
     else os.getenv("API_ADOPCIONES_URL", "http://127.0.0.1:8000")
 ).rstrip("/")
+
+CLAVE_ADMIN = (
+    sys.argv[3] if len(sys.argv) > 3
+    else os.getenv("CLAVE_ADMIN", "")
+).strip()
+
+# Encabezado para las operaciones de la fundación
+FUNDACION = {"X-Clave-Admin": CLAVE_ADMIN}
 
 resultados = []
 base_documento = str(int(time.time()))[-8:]
@@ -78,6 +87,7 @@ def crear_mascota(nombre):
             "esterilizado": True,
             "descripcion": "Registro creado por pruebas/prueba_integracion.py"
         },
+        headers=FUNDACION,
         timeout=30
     )
     return respuesta
@@ -106,10 +116,11 @@ def solicitar(id_mascota, nombre, documento=None):
     )
 
 
-def aprobar(id_solicitud):
+def aprobar(id_solicitud, clave=True):
     return requests.patch(
         f"{API_ADOPCIONES}/solicitudes/{id_solicitud}/aprobar",
         json={"observacion": "Aprobada por la prueba de integración"},
+        headers=FUNDACION if clave else {},
         timeout=30
     )
 
@@ -118,6 +129,7 @@ def rechazar(id_solicitud):
     return requests.patch(
         f"{API_ADOPCIONES}/solicitudes/{id_solicitud}/rechazar",
         json={"observacion": "Rechazada por la prueba de integración"},
+        headers=FUNDACION,
         timeout=30
     )
 
@@ -141,6 +153,14 @@ def mostrar(respuesta):
 
 def escenario_servicios():
     titulo("0. Los dos servicios responden")
+
+    if not CLAVE_ADMIN:
+        verificar(
+            "Clave de administrador recibida",
+            False,
+            "Pásala como tercer argumento o en la variable CLAVE_ADMIN"
+        )
+        return False
 
     for nombre, url in (("Mascotas", API_MASCOTAS), ("Adopciones", API_ADOPCIONES)):
         try:
@@ -186,6 +206,10 @@ def escenario_adopcion_completa():
     id_b = solicitud_b.json()["solicitud"]["id_solicitud"]
     id_c = solicitud_c.json()["solicitud"]["id_solicitud"]
 
+    respuesta = aprobar(id_a, clave=False)
+    verificar("Sin la clave de la fundación no se puede aprobar (401)",
+              respuesta.status_code == 401, mostrar(respuesta))
+
     respuesta = rechazar(id_c)
     verificar("Rechazar la solicitud C", respuesta.status_code == 200, mostrar(respuesta))
     verificar(
@@ -215,12 +239,17 @@ def escenario_adopcion_completa():
     respuesta = requests.patch(
         f"{API_MASCOTAS}/mascotas/{id_mascota}/estado",
         json={"estado": "adoptada"},
+        headers=FUNDACION,
         timeout=30
     )
     verificar("La API de Mascotas también rechaza una segunda adopción (409)",
               respuesta.status_code == 409, mostrar(respuesta))
 
-    respuesta = requests.get(f"{API_ADOPCIONES}/solicitudes/{id_a}", timeout=30)
+    respuesta = requests.get(
+        f"{API_ADOPCIONES}/solicitudes/{id_a}",
+        headers=FUNDACION,
+        timeout=30
+    )
     mascota = respuesta.json().get("mascota") or {}
     verificar(
         "El detalle de la solicitud A trae la mascota desde la API de Mascotas",
@@ -280,6 +309,7 @@ def escenario_aprobaciones_simultaneas():
     respuesta = requests.get(
         f"{API_ADOPCIONES}/solicitudes",
         params={"id_mascota": id_mascota, "estado": "aprobada"},
+        headers=FUNDACION,
         timeout=30
     )
     verificar(

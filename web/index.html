@@ -53,8 +53,9 @@
 
             <nav class="navegacion" aria-label="Secciones">
                 <a class="pestana" href="#mascotas" data-vista="mascotas">Adoptar</a>
-                <a class="pestana" href="#solicitudes" data-vista="solicitudes">Solicitudes</a>
-                <a class="pestana" href="#registro" data-vista="registro">Registrar mascota</a>
+                <a class="pestana" href="#solicitudes" data-vista="solicitudes" data-solo-fundacion hidden>Solicitudes</a>
+                <a class="pestana" href="#registro" data-vista="registro" data-solo-fundacion hidden>Registrar mascota</a>
+                <button id="btn-acceso" type="button" class="boton-acceso">Acceso fundación</button>
             </nav>
         </div>
     </header>
@@ -361,6 +362,34 @@
     </dialog>
 
 
+    <!-- ========== DIÁLOGO: ACCESO DE LA FUNDACIÓN ========== -->
+    <dialog id="dialogo-acceso" class="dialogo dialogo-pequeno" aria-labelledby="titulo-dialogo-acceso">
+        <form id="form-acceso" novalidate>
+            <div class="dialogo-encabezado">
+                <h2 id="titulo-dialogo-acceso">Acceso de la fundación</h2>
+                <button type="button" class="boton-cerrar" data-cerrar aria-label="Cerrar">×</button>
+            </div>
+
+            <p class="texto-secundario">
+                Solo el equipo de la fundación puede revisar solicitudes
+                y registrar mascotas.
+            </p>
+
+            <label class="campo">
+                <span>Clave de administrador</span>
+                <input name="clave" type="password" required autocomplete="current-password">
+            </label>
+
+            <p id="error-acceso" class="error-formulario" role="alert"></p>
+
+            <div class="acciones-formulario">
+                <button type="button" class="boton boton-secundario" data-cerrar>Cancelar</button>
+                <button type="submit" class="boton">Entrar</button>
+            </div>
+        </form>
+    </dialog>
+
+
     <!-- ========== DIÁLOGO: REVISAR SOLICITUD ========== -->
     <dialog id="dialogo-revision" class="dialogo" aria-labelledby="titulo-dialogo-revision">
         <div class="dialogo-encabezado">
@@ -380,9 +409,22 @@
 
             <p id="error-decision" class="error-formulario" role="alert"></p>
 
-            <div class="acciones-formulario">
+            <div id="acciones-decision" class="acciones-formulario">
                 <button type="button" id="btn-rechazar" class="boton boton-peligro">Rechazar</button>
                 <button type="button" id="btn-aprobar" class="boton boton-exito">Aprobar adopción</button>
+            </div>
+
+            <!-- Confirmación antes de aprobar o rechazar -->
+            <div id="confirmacion" class="confirmacion" role="group" aria-labelledby="titulo-confirmacion" hidden>
+                <div id="icono-confirmacion" class="confirmacion-icono" aria-hidden="true"></div>
+                <div class="confirmacion-texto">
+                    <p id="titulo-confirmacion" class="confirmacion-titulo"></p>
+                    <ul id="detalle-confirmacion" class="confirmacion-lista"></ul>
+                </div>
+                <div class="acciones-formulario confirmacion-acciones">
+                    <button type="button" id="btn-volver-confirmacion" class="boton boton-secundario">Volver</button>
+                    <button type="button" id="btn-confirmar" class="boton"></button>
+                </div>
             </div>
         </form>
     </dialog>

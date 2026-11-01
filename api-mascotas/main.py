@@ -1,9 +1,12 @@
 
+import os
+import secrets
 from datetime import date, datetime
 from typing import Annotated, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from con_db import obtener_conexion
 
@@ -171,6 +174,46 @@ class Error(BaseModel):
 
 ERROR_404 = {404: {"model": Error, "description": "La mascota no existe"}}
 
+ERROR_401 = {
+    401: {"model": Error, "description": "Falta la clave de administrador o es incorrecta"}
+}
+
+
+# ==================================================
+# 3. CLAVE DE LA FUNDACIÓN
+# ==================================================
+# Registrar mascotas y cambiar su estado exige el encabezado
+# X-Clave-Admin con el valor de la variable de entorno CLAVE_ADMIN.
+# La API de Adopciones envía la misma clave cuando cambia un estado.
+
+esquema_clave = APIKeyHeader(
+    name="X-Clave-Admin",
+    auto_error=False,
+    description="Clave de administrador de la fundación (variable CLAVE_ADMIN)"
+)
+
+
+def verificar_clave_admin(clave: Optional[str] = Security(esquema_clave)):
+    esperada = os.getenv("CLAVE_ADMIN", "").strip()
+
+    if not esperada:
+        raise HTTPException(
+            status_code=503,
+            detail="El servidor no tiene configurada la variable CLAVE_ADMIN"
+        )
+
+    # compare_digest evita deducir la clave midiendo el tiempo de respuesta.
+    if not clave or not secrets.compare_digest(
+        clave.strip().encode(), esperada.encode()
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Clave de administrador incorrecta"
+        )
+
+
+SOLO_FUNDACION = [Depends(verificar_clave_admin)]
+
 
 def convertir_mascota(fila):
     return {
@@ -192,7 +235,7 @@ def convertir_mascota(fila):
 
 
 # ==================================================
-# 3. ENDPOINTS
+# 4. ENDPOINTS
 # ==================================================
 
 @app.get("/", tags=["Servicio"], summary="Verificar el servicio")
@@ -305,9 +348,14 @@ def consultar_mascota(id_mascota: IdMascota):
     "/mascotas",
     response_model=MascotaRespuesta,
     status_code=201,
+    responses=ERROR_401,
+    dependencies=SOLO_FUNDACION,
     tags=["Mascotas"],
-    summary="Registrar una mascota",
-    description="Toda mascota nueva queda en estado `disponible`."
+    summary="Registrar una mascota (requiere clave)",
+    description=(
+        "Toda mascota nueva queda en estado `disponible`. "
+        "Requiere el encabezado `X-Clave-Admin`."
+    )
 )
 def registrar_mascota(datos: Mascota):
     conexion = None
@@ -391,12 +439,15 @@ def consultar_disponibilidad(id_mascota: IdMascota):
     "/mascotas/{id_mascota}/estado",
     response_model=CambioEstadoRespuesta,
     responses={
+        **ERROR_401,
         **ERROR_404,
         409: {"model": Error, "description": "Cambio de estado no permitido"}
     },
+    dependencies=SOLO_FUNDACION,
     tags=["Disponibilidad"],
-    summary="Cambiar el estado de una mascota",
+    summary="Cambiar el estado de una mascota (requiere clave)",
     description=(
+        "Lo usa la API de Adopciones, que envía el encabezado `X-Clave-Admin`.\n\n"
         "Cambios permitidos:\n\n"
         "- `disponible` → `en_proceso` o `adoptada`\n"
         "- `en_proceso` → `disponible` o `adoptada`\n"

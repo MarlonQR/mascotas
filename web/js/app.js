@@ -31,7 +31,9 @@ const app = {
     filtroEstado: "todos",
     filtroSolicitudes: "todas",
     mascotaElegida: null,
-    solicitudAbierta: null
+    solicitudAbierta: null,
+    accionPendiente: null,
+    claveAdmin: null
 };
 
 const VISTAS = ["mascotas", "solicitudes", "registro"];
@@ -121,11 +123,16 @@ function describirError(codigo, datos) {
 }
 
 async function pedirJSON(url, opciones = {}) {
-    const configuracion = { method: opciones.method || "GET" };
+    const configuracion = { method: opciones.method || "GET", headers: {} };
 
     if (opciones.body !== undefined) {
-        configuracion.headers = { "Content-Type": "application/json" };
+        configuracion.headers["Content-Type"] = "application/json";
         configuracion.body = JSON.stringify(opciones.body);
+    }
+
+    // Operaciones de la fundación: la API exige la clave en este encabezado.
+    if (opciones.admin) {
+        configuracion.headers["X-Clave-Admin"] = opciones.clave || app.claveAdmin || "";
     }
 
     let respuesta;
@@ -145,6 +152,12 @@ async function pedirJSON(url, opciones = {}) {
         datos = await respuesta.json();
     } catch (error) {
         datos = null;
+    }
+
+    if (respuesta.status === 401 && opciones.admin && !opciones.clave) {
+        // La clave guardada ya no sirve (por ejemplo, la cambiaron en Vercel).
+        cerrarSesionFundacion();
+        mostrarAviso("La clave de la fundación ya no es válida. Ingrésala de nuevo.", "error");
     }
 
     if (!respuesta.ok) {
@@ -530,7 +543,7 @@ async function consultarSolicitudes() {
     boton.disabled = true;
 
     try {
-        const solicitudes = await pedirJSON(`${API_ADOPCIONES}/solicitudes`);
+        const solicitudes = await pedirJSON(`${API_ADOPCIONES}/solicitudes`, { admin: true });
 
         if (!Array.isArray(solicitudes)) {
             throw new Error("La respuesta no tiene el formato esperado.");
@@ -674,6 +687,7 @@ async function abrirRevision(idSolicitud) {
     );
     formulario.reset();
     formulario.hidden = true;
+    ocultarConfirmacion();
 
     if (!dialogo.open) {
         dialogo.showModal();
@@ -682,7 +696,8 @@ async function abrirRevision(idSolicitud) {
     try {
         // La API de Adopciones consulta internamente a la API de Mascotas.
         const solicitud = await pedirJSON(
-            `${API_ADOPCIONES}/solicitudes/${encodeURIComponent(idSolicitud)}`
+            `${API_ADOPCIONES}/solicitudes/${encodeURIComponent(idSolicitud)}`,
+            { admin: true }
         );
 
         app.solicitudAbierta = solicitud;
@@ -772,12 +787,12 @@ function mostrarDetalleSolicitud(solicitud) {
     }
 }
 
-async function decidirSolicitud(accion) {
+// Muestra dentro del diálogo qué va a pasar antes de aprobar o rechazar.
+function pedirConfirmacion(accion) {
     const solicitud = app.solicitudAbierta;
     const formulario = document.getElementById("form-decision");
     const error = document.getElementById("error-decision");
     const campo = formulario.elements.observacion;
-    const observacion = campo.value.trim();
 
     if (!solicitud) {
         return;
@@ -785,26 +800,85 @@ async function decidirSolicitud(accion) {
 
     error.textContent = "";
 
-    if (accion === "rechazar" && observacion.length < 5) {
+    if (accion === "rechazar" && campo.value.trim().length < 5) {
         error.textContent = "Escribe el motivo del rechazo (mínimo 5 caracteres).";
         campo.focus();
         return;
     }
 
+    const mascota = solicitud.mascota;
+    const nombre = mascota ? mascota.nombre : `La mascota #${solicitud.id_mascota}`;
+    const o = terminacion(mascota);
+
+    // Otras solicitudes pendientes por la misma mascota.
+    const otras = app.solicitudes.filter(otra =>
+        otra.id_mascota === solicitud.id_mascota &&
+        otra.estado === "pendiente" &&
+        otra.id_solicitud !== solicitud.id_solicitud
+    ).length;
+
+    const plural = otras === 1 ? "1 solicitud pendiente" : `${otras} solicitudes pendientes`;
+    const boton = document.getElementById("btn-confirmar");
+    let titulo;
+    let consecuencias;
+
     if (accion === "aprobar") {
-        const nombre = solicitud.mascota
-            ? solicitud.mascota.nombre
-            : `la mascota #${solicitud.id_mascota}`;
-
-        const confirmado = confirm(
-            `¿Aprobar la adopción de ${nombre} por ${solicitud.nombre_solicitante}?\n\n` +
-            "Las demás solicitudes pendientes por esta mascota se rechazarán."
-        );
-
-        if (!confirmado) {
-            return;
-        }
+        titulo = `¿Entregar a ${nombre} en adopción a ${solicitud.nombre_solicitante}?`;
+        consecuencias = [
+            `${nombre} quedará como adoptad${o} y saldrá del catálogo de disponibles.`,
+            otras === 0
+                ? `No hay otras solicitudes pendientes por ${nombre}.`
+                : otras === 1
+                    ? `La otra solicitud pendiente por ${nombre} se rechazará automáticamente.`
+                    : `Las otras ${otras} solicitudes pendientes por ${nombre} se rechazarán automáticamente.`,
+            "Esta decisión no se puede deshacer desde la plataforma."
+        ];
+        document.getElementById("icono-confirmacion").textContent = "🏡";
+        boton.textContent = "Sí, aprobar adopción";
+        boton.className = "boton boton-exito";
+    } else {
+        titulo = `¿Rechazar la solicitud de ${solicitud.nombre_solicitante}?`;
+        consecuencias = [
+            otras > 0
+                ? `${nombre} seguirá en proceso porque tiene ${plural} más.`
+                : `${nombre} volverá a aparecer como disponible en el catálogo.`,
+            "El motivo que escribiste queda guardado en la solicitud."
+        ];
+        document.getElementById("icono-confirmacion").textContent = "✋";
+        boton.textContent = "Sí, rechazar";
+        boton.className = "boton boton-peligro-solido";
     }
+
+    document.getElementById("titulo-confirmacion").textContent = titulo;
+    document.getElementById("detalle-confirmacion").replaceChildren(
+        ...consecuencias.map(texto => crear("li", "", texto))
+    );
+
+    app.accionPendiente = accion;
+    document.getElementById("acciones-decision").hidden = true;
+    document.getElementById("confirmacion").hidden = false;
+    campo.disabled = true;
+    boton.focus();
+}
+
+function ocultarConfirmacion() {
+    app.accionPendiente = null;
+    document.getElementById("confirmacion").hidden = true;
+    document.getElementById("acciones-decision").hidden = false;
+    document.getElementById("form-decision").elements.observacion.disabled = false;
+}
+
+async function decidirSolicitud(accion) {
+    const solicitud = app.solicitudAbierta;
+    const formulario = document.getElementById("form-decision");
+    const error = document.getElementById("error-decision");
+    const observacion = formulario.elements.observacion.value.trim();
+
+    if (!solicitud || !accion) {
+        return;
+    }
+
+    error.textContent = "";
 
     const botones = formulario.querySelectorAll("button");
     botones.forEach(boton => { boton.disabled = true; });
@@ -814,15 +888,18 @@ async function decidirSolicitud(accion) {
             `${API_ADOPCIONES}/solicitudes/${solicitud.id_solicitud}/${accion}`,
             {
                 method: "PATCH",
-                body: { observacion: observacion || null }
+                body: { observacion: observacion || null },
+                admin: true
             }
         );
 
         let texto = respuesta.mensaje;
         const rechazadas = respuesta.solicitudes_rechazadas || [];
 
-        if (rechazadas.length > 0) {
-            texto += ` Se rechazaron ${rechazadas.length} solicitud(es) pendiente(s) por la misma mascota.`;
+        if (rechazadas.length === 1) {
+            texto += " La otra solicitud pendiente se rechazó automáticamente.";
+        } else if (rechazadas.length > 1) {
+            texto += ` Las otras ${rechazadas.length} solicitudes pendientes se rechazaron automáticamente.`;
         }
 
         document.getElementById("dialogo-revision").close();
@@ -832,6 +909,7 @@ async function decidirSolicitud(accion) {
 
     } catch (excepcion) {
         console.error(`Error al ${accion} la solicitud:`, excepcion);
+        ocultarConfirmacion();
         error.textContent = excepcion.message;
 
     } finally {
@@ -879,7 +957,8 @@ async function registrarMascota(evento) {
     try {
         const nueva = await pedirJSON(`${API_MASCOTAS}/mascotas`, {
             method: "POST",
-            body: mascota
+            body: mascota,
+            admin: true
         });
 
         formulario.reset();
@@ -926,12 +1005,129 @@ async function verificarServicio(id, url) {
 
 
 // ==================================================
-// 9. NAVEGACIÓN E INICIO DE LA APLICACIÓN
+// 9. ACCESO DE LA FUNDACIÓN
 // ==================================================
+
+// La clave se guarda solo mientras la pestaña del navegador esté abierta.
+// La que protege los datos es la API: sin la clave correcta responde 401.
+
+function leerClaveGuardada() {
+    try {
+        return sessionStorage.getItem("claveFundacion") || null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function actualizarAccesoFundacion() {
+    const dentro = Boolean(app.claveAdmin);
+
+    document.querySelectorAll("[data-solo-fundacion]").forEach(elemento => {
+        elemento.hidden = !dentro;
+    });
+
+    const boton = document.getElementById("btn-acceso");
+    boton.textContent = dentro ? "Salir" : "Acceso fundación";
+    boton.title = dentro ? "Cerrar el acceso de la fundación" : "";
+}
+
+function abrirAcceso() {
+    if (app.claveAdmin) {
+        cerrarSesionFundacion();
+        mostrarAviso("Saliste del acceso de la fundación.");
+        return;
+    }
+
+    const formulario = document.getElementById("form-acceso");
+
+    formulario.reset();
+    document.getElementById("error-acceso").textContent = "";
+    document.getElementById("dialogo-acceso").showModal();
+    formulario.elements.clave.focus();
+}
+
+async function ingresarFundacion(evento) {
+    evento.preventDefault();
+
+    const formulario = evento.currentTarget;
+    const error = document.getElementById("error-acceso");
+    const boton = formulario.querySelector('button[type="submit"]');
+    const clave = formulario.elements.clave.value.trim();
+
+    error.textContent = "";
+
+    if (!clave) {
+        error.textContent = "Escribe la clave.";
+        return;
+    }
+
+    boton.disabled = true;
+    boton.textContent = "Verificando...";
+
+    try {
+        // Si la API acepta la clave al listar solicitudes, la clave es correcta.
+        await pedirJSON(`${API_ADOPCIONES}/solicitudes`, { admin: true, clave });
+
+        app.claveAdmin = clave;
+
+        try {
+            sessionStorage.setItem("claveFundacion", clave);
+        } catch (excepcion) {
+            // Sin almacenamiento, el acceso dura hasta recargar la página.
+        }
+
+        document.getElementById("dialogo-acceso").close();
+        actualizarAccesoFundacion();
+        mostrarAviso("Entraste como fundación.");
+        location.hash = "#solicitudes";
+
+    } catch (excepcion) {
+        error.textContent = excepcion.message;
+
+    } finally {
+        boton.disabled = false;
+        boton.textContent = "Entrar";
+    }
+}
+
+function cerrarSesionFundacion() {
+    app.claveAdmin = null;
+
+    try {
+        sessionStorage.removeItem("claveFundacion");
+    } catch (error) {
+        // Nada que limpiar.
+    }
+
+    actualizarAccesoFundacion();
+
+    const revision = document.getElementById("dialogo-revision");
+
+    if (revision.open) {
+        revision.close();
+    }
+
+    if (location.hash !== "#mascotas") {
+        location.hash = "#mascotas";
+    }
+}
+
+
+// ==================================================
+// 10. NAVEGACIÓN E INICIO DE LA APLICACIÓN
+// ==================================================
+
+const VISTAS_FUNDACION = ["solicitudes", "registro"];
 
 function mostrarVista() {
     const pedida = location.hash.slice(1);
-    const vista = VISTAS.includes(pedida) ? pedida : "mascotas";
+    let vista = VISTAS.includes(pedida) ? pedida : "mascotas";
+
+    // Sin la clave, las vistas de la fundación llevan al catálogo.
+    if (VISTAS_FUNDACION.includes(vista) && !app.claveAdmin) {
+        vista = "mascotas";
+        history.replaceState(null, "", "#mascotas");
+    }
 
     VISTAS.forEach(nombre => {
         const activa = nombre === vista;
@@ -990,9 +1186,13 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("error-mascota").textContent = "";
         });
     document.getElementById("btn-aprobar")
-        .addEventListener("click", () => decidirSolicitud("aprobar"));
+        .addEventListener("click", () => pedirConfirmacion("aprobar"));
     document.getElementById("btn-rechazar")
-        .addEventListener("click", () => decidirSolicitud("rechazar"));
+        .addEventListener("click", () => pedirConfirmacion("rechazar"));
+    document.getElementById("btn-volver-confirmacion")
+        .addEventListener("click", ocultarConfirmacion);
+    document.getElementById("btn-confirmar")
+        .addEventListener("click", () => decidirSolicitud(app.accionPendiente));
 
     // Cerrar diálogos con sus botones o haciendo clic fuera de ellos.
     document.querySelectorAll("[data-cerrar]").forEach(boton => {
@@ -1016,8 +1216,16 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    // Acceso de la fundación.
+    document.getElementById("btn-acceso")
+        .addEventListener("click", abrirAcceso);
+    document.getElementById("form-acceso")
+        .addEventListener("submit", ingresarFundacion);
+
     window.addEventListener("hashchange", mostrarVista);
 
+    app.claveAdmin = leerClaveGuardada();
+    actualizarAccesoFundacion();
     mostrarVista();
     consultarMascotas();
     verificarServicio("estado-api-mascotas", API_MASCOTAS);

@@ -1,11 +1,13 @@
 
 import os
+import secrets
 from datetime import datetime
 from typing import Annotated, Literal, Optional
 
 import requests
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from psycopg2.errors import UniqueViolation
 from pydantic import BaseModel, Field
 from con_db import obtener_conexion
@@ -199,6 +201,10 @@ ERRORES = {
     502: {"model": Error, "description": "La API de Mascotas no respondió"}
 }
 
+ERROR_401 = {
+    401: {"model": Error, "description": "Falta la clave de administrador o es incorrecta"}
+}
+
 
 def convertir_solicitud(fila, mascota=None):
     return {
@@ -221,7 +227,48 @@ def convertir_solicitud(fila, mascota=None):
 
 
 # ==================================================
-# 2. COMUNICACIÓN CON LA API DE MASCOTAS
+# 2. CLAVE DE LA FUNDACIÓN
+# ==================================================
+# Consultar, aprobar y rechazar solicitudes exige el encabezado
+# X-Clave-Admin con el valor de la variable de entorno CLAVE_ADMIN.
+# Registrar una solicitud es público. La misma clave se envía a la API
+# de Mascotas cuando hay que cambiar el estado de una mascota.
+
+esquema_clave = APIKeyHeader(
+    name="X-Clave-Admin",
+    auto_error=False,
+    description="Clave de administrador de la fundación (variable CLAVE_ADMIN)"
+)
+
+
+def clave_admin():
+    return os.getenv("CLAVE_ADMIN", "").strip()
+
+
+def verificar_clave_admin(clave: Optional[str] = Security(esquema_clave)):
+    esperada = clave_admin()
+
+    if not esperada:
+        raise HTTPException(
+            status_code=503,
+            detail="El servidor no tiene configurada la variable CLAVE_ADMIN"
+        )
+
+    # compare_digest evita deducir la clave midiendo el tiempo de respuesta.
+    if not clave or not secrets.compare_digest(
+        clave.strip().encode(), esperada.encode()
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Clave de administrador incorrecta"
+        )
+
+
+SOLO_FUNDACION = [Depends(verificar_clave_admin)]
+
+
+# ==================================================
+# 3. COMUNICACIÓN CON LA API DE MASCOTAS
 # ==================================================
 
 def resumir_mascota(mascota):
@@ -275,6 +322,7 @@ def cambiar_estado_mascota(id_mascota, estado):
         respuesta = requests.patch(
             f"{API_MASCOTAS_URL}/mascotas/{id_mascota}/estado",
             json={"estado": estado},
+            headers={"X-Clave-Admin": clave_admin()},
             timeout=10
         )
     except requests.RequestException:
@@ -289,6 +337,15 @@ def cambiar_estado_mascota(id_mascota, estado):
             detail=detalle_error(
                 respuesta,
                 "El servicio de Mascotas rechazó el cambio de estado"
+            )
+        )
+
+    if respuesta.status_code in (401, 503):
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "La API de Mascotas no aceptó la clave de la API de Adopciones. "
+                "CLAVE_ADMIN debe tener el mismo valor en los dos servicios."
             )
         )
 
@@ -308,6 +365,7 @@ def revertir_estado_mascota(id_mascota, estado):
         requests.patch(
             f"{API_MASCOTAS_URL}/mascotas/{id_mascota}/estado",
             json={"estado": estado},
+            headers={"X-Clave-Admin": clave_admin()},
             timeout=10
         )
     except requests.RequestException:
@@ -390,7 +448,7 @@ def bloquear_solicitud_pendiente(cursor, id_solicitud):
 
 
 # ==================================================
-# 3. ENDPOINTS
+# 4. ENDPOINTS
 # ==================================================
 
 @app.get("/", tags=["Servicio"], summary="Verificar el servicio")
@@ -401,11 +459,14 @@ def inicio():
 @app.get(
     "/solicitudes",
     response_model=list[SolicitudRespuesta],
+    responses=ERROR_401,
+    dependencies=SOLO_FUNDACION,
     tags=["Solicitudes"],
-    summary="Listar solicitudes",
+    summary="Listar solicitudes (requiere clave)",
     description=(
         "Devuelve las solicitudes, primero las pendientes. Cada una incluye "
-        "un resumen de la mascota obtenido de la API de Mascotas."
+        "un resumen de la mascota obtenido de la API de Mascotas. "
+        "Contiene datos personales, por eso exige `X-Clave-Admin`."
     )
 )
 def consultar_solicitudes(
@@ -462,9 +523,10 @@ def consultar_solicitudes(
 @app.get(
     "/solicitudes/{id_solicitud}",
     response_model=SolicitudRespuesta,
-    responses={404: ERRORES[404]},
+    responses={**ERROR_401, 404: ERRORES[404]},
+    dependencies=SOLO_FUNDACION,
     tags=["Solicitudes"],
-    summary="Consultar una solicitud con los datos de su mascota"
+    summary="Consultar una solicitud con los datos de su mascota (requiere clave)"
 )
 def consultar_solicitud(id_solicitud: IdSolicitud):
     conexion = None
@@ -631,9 +693,10 @@ def registrar_solicitud(datos: Solicitud):
 @app.patch(
     "/solicitudes/{id_solicitud}/aprobar",
     response_model=DecisionRespuesta,
-    responses=ERRORES,
+    responses={**ERROR_401, **ERRORES},
+    dependencies=SOLO_FUNDACION,
     tags=["Gestión"],
-    summary="Aprobar una solicitud",
+    summary="Aprobar una solicitud (requiere clave)",
     description=(
         "1. Verifica que la solicitud siga `pendiente`.\n"
         "2. Verifica que la mascota no tenga otra adopción aprobada.\n"
@@ -734,10 +797,12 @@ def aprobar_solicitud(id_solicitud: IdSolicitud, datos: Optional[Aprobacion] = N
 
         conexion.commit()
 
+        adoptada = "adoptada" if mascota.get("sexo") == "hembra" else "adoptado"
+
         return {
             "mensaje": (
                 f"Solicitud #{id_solicitud} aprobada. "
-                f"{mascota['nombre']} quedó registrada como adoptada."
+                f"{mascota['nombre']} quedó {adoptada}."
             ),
             "solicitud": convertir_solicitud(fila, mascota),
             "solicitudes_rechazadas": rechazadas
@@ -781,9 +846,10 @@ def aprobar_solicitud(id_solicitud: IdSolicitud, datos: Optional[Aprobacion] = N
 @app.patch(
     "/solicitudes/{id_solicitud}/rechazar",
     response_model=DecisionRespuesta,
-    responses=ERRORES,
+    responses={**ERROR_401, **ERRORES},
+    dependencies=SOLO_FUNDACION,
     tags=["Gestión"],
-    summary="Rechazar una solicitud",
+    summary="Rechazar una solicitud (requiere clave)",
     description=(
         "Rechaza una solicitud pendiente. Si la mascota se queda sin "
         "solicitudes pendientes, la API de Mascotas la devuelve a `disponible`."

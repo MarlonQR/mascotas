@@ -138,6 +138,32 @@ h3 {
     color: #ffffff;
 }
 
+.boton-acceso {
+    margin-left: 6px;
+    padding: 7px 14px;
+    border: 1px solid var(--color-borde);
+    border-radius: 999px;
+    background: var(--color-panel);
+    color: var(--color-texto);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.boton-acceso:hover {
+    border-color: var(--color-principal);
+    color: var(--color-principal-hover);
+}
+
+.dialogo-pequeno {
+    width: min(420px, calc(100% - 24px));
+}
+
+.dialogo-pequeno .texto-secundario {
+    margin: 0 0 14px;
+}
+
 /* 3. Contenido principal */
 
 main {
@@ -914,6 +940,57 @@ textarea:user-invalid {
 .decision {
     padding-top: 14px;
     border-top: 1px solid var(--color-borde);
+}
+
+.decision textarea:disabled {
+    background: #f5f5f4;
+    color: var(--color-texto-suave);
+}
+
+.confirmacion {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 14px;
+    margin-top: 14px;
+    padding: 16px;
+    border: 1px solid #fed7aa;
+    border-radius: 14px;
+    background: #fff7ed;
+}
+
+.confirmacion-icono {
+    font-size: 30px;
+    line-height: 1;
+}
+
+.confirmacion-titulo {
+    margin: 2px 0 8px;
+    font-size: 17px;
+    font-weight: 800;
+}
+
+.confirmacion-lista {
+    margin: 0;
+    padding-left: 18px;
+    color: #57534e;
+    font-size: 14px;
+}
+
+.confirmacion-lista li + li {
+    margin-top: 4px;
+}
+
+.confirmacion-acciones {
+    grid-column: 1 / -1;
+    margin-top: 12px;
+}
+
+.boton-peligro-solido {
+    background: var(--color-error);
+}
+
+.boton-peligro-solido:hover {
+    background: var(--color-error-hover);
 }
 
 /* 13. Pie de página */
