@@ -1,5 +1,6 @@
 
 import base64
+import hashlib
 import os
 import re
 import secrets
@@ -303,13 +304,23 @@ def convertir_mascota(fila, fotos=None, privado=False):
     return mascota
 
 
+def ruta_foto(id_mascota, orden, huella):
+    # La huella cambia si cambia la imagen. Así el navegador no muestra una
+    # foto vieja guardada en caché cuando un id de mascota se reutiliza.
+    return f"/mascotas/{id_mascota}/fotos/{orden}?v={huella}"
+
+
+def huella_foto(contenido):
+    return hashlib.md5(contenido).hexdigest()[:10]
+
+
 def rutas_fotos(cursor, ids):
     if not ids:
         return {}
 
     cursor.execute(
         """
-        SELECT id_mascota, orden
+        SELECT id_mascota, orden, left(md5(contenido), 10)
         FROM fotos_mascotas
         WHERE id_mascota = ANY(%s)
         ORDER BY id_mascota, orden;
@@ -319,9 +330,9 @@ def rutas_fotos(cursor, ids):
 
     rutas = {}
 
-    for id_mascota, orden in cursor.fetchall():
+    for id_mascota, orden, huella in cursor.fetchall():
         rutas.setdefault(id_mascota, []).append(
-            f"/mascotas/{id_mascota}/fotos/{orden}"
+            ruta_foto(id_mascota, orden, huella)
         )
 
     return rutas
@@ -700,7 +711,10 @@ def registrar_mascota(
 
         conexion.commit()
 
-        rutas = [f"/mascotas/{id_mascota}/fotos/{orden}" for orden in range(1, len(fotos) + 1)]
+        rutas = [
+            ruta_foto(id_mascota, orden, huella_foto(contenido))
+            for orden, (tipo, contenido) in enumerate(fotos, start=1)
+        ]
 
         return convertir_mascota(fila, rutas)
 

@@ -406,6 +406,26 @@
     </main>
 
 
+    <!-- ========== DIÁLOGO: DETALLE DE LA MASCOTA ========== -->
+    <dialog id="dialogo-detalle" class="dialogo dialogo-ancho" aria-labelledby="titulo-detalle">
+        <div class="dialogo-encabezado">
+            <h2 id="titulo-detalle">Mascota</h2>
+            <button type="button" class="boton-cerrar" data-cerrar aria-label="Cerrar">×</button>
+        </div>
+
+        <div id="contenido-detalle" class="detalle" aria-live="polite"></div>
+
+        <div class="detalle-acciones">
+            <div class="detalle-navegacion">
+                <button id="btn-detalle-anterior" type="button" class="boton boton-secundario" aria-label="Mascota anterior">← Anterior</button>
+                <span id="posicion-detalle" class="texto-secundario"></span>
+                <button id="btn-detalle-siguiente" type="button" class="boton boton-secundario" aria-label="Mascota siguiente">Siguiente →</button>
+            </div>
+            <button id="btn-detalle-adoptar" type="button" class="boton">Quiero adoptarla</button>
+        </div>
+    </dialog>
+
+
     <!-- ========== DIÁLOGO: SOLICITAR ADOPCIÓN ========== -->
     <dialog id="dialogo-solicitud" class="dialogo" aria-labelledby="titulo-dialogo-solicitud">
         <form id="form-solicitud" novalidate>

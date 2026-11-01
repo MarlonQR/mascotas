@@ -1666,3 +1666,148 @@ body {
         width: calc(100% - 24px);
     }
 }
+
+/* 20. Tarjeta clicable y ficha de la mascota */
+
+.tarjeta {
+    cursor: pointer;
+}
+
+.tarjeta-nombre {
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tarjeta-nombre:hover {
+    color: var(--color-principal);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.tarjeta-acciones {
+    display: grid;
+    gap: 8px;
+    margin-top: auto;
+}
+
+.tarjeta-cuerpo .tarjeta-acciones .boton {
+    margin-top: 0;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.dialogo-ancho {
+    width: min(940px, calc(100% - 24px));
+}
+
+.detalle {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.detalle-galeria {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.detalle-foto-principal {
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--color-foto-fondo);
+}
+
+.detalle-foto-principal img,
+.detalle-foto-principal .foto-alterna {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.detalle-miniaturas {
+    display: flex;
+    gap: 8px;
+}
+
+.detalle-miniaturas button {
+    width: 72px;
+    height: 72px;
+    padding: 0;
+    overflow: hidden;
+    border: 3px solid transparent;
+    border-radius: 10px;
+    background: var(--color-foto-fondo);
+    cursor: pointer;
+}
+
+.detalle-miniaturas button.activa {
+    border-color: var(--color-principal);
+}
+
+.detalle-miniaturas img,
+.detalle-miniaturas .foto-alterna {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: grid;
+    font-size: 28px;
+}
+
+.detalle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.detalle-info .datos-solicitud {
+    margin: 0;
+}
+
+.detalle-info .cita {
+    margin: 0;
+}
+
+.detalle-acciones {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--color-borde);
+}
+
+.detalle-navegacion {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+@media (max-width: 760px) {
+    .detalle {
+        grid-template-columns: 1fr;
+    }
+
+    .detalle-acciones,
+    .detalle-navegacion {
+        width: 100%;
+    }
+
+    .detalle-navegacion {
+        justify-content: space-between;
+    }
+
+    #btn-detalle-adoptar {
+        width: 100%;
+    }
+}

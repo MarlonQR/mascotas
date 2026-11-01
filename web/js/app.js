@@ -496,6 +496,11 @@ async function consultarMascotas() {
         actualizarCifras();
         mostrarMascotas();
 
+        // Si la ficha está abierta, se actualiza con los datos nuevos
+        if (document.getElementById("dialogo-detalle").open) {
+            mostrarDetalleMascota();
+        }
+
     } catch (error) {
         console.error("Error al consultar mascotas:", error);
 
@@ -537,9 +542,12 @@ function mostrarMascotas() {
             : "Ninguna mascota coincide con los filtros.";
 
         lista.replaceChildren(crear("p", "vacio", texto));
+        app.mascotasVisibles = [];
         return;
     }
 
+    // La ficha de detalle navega en este mismo orden y con los mismos filtros
+    app.mascotasVisibles = visibles;
     lista.replaceChildren(...visibles.map(crearTarjeta));
 }
 
@@ -560,8 +568,16 @@ function crearTarjeta(mascota) {
     const cuerpo = crear("div", "tarjeta-cuerpo");
     const titulo = crear("div", "tarjeta-titulo");
 
+    // El nombre es un botón para abrir la ficha también con el teclado
+    const nombre = crear("h3");
+    const enlaceNombre = crear("button", "tarjeta-nombre", mascota.nombre);
+
+    enlaceNombre.type = "button";
+    enlaceNombre.setAttribute("aria-label", `Ver la ficha de ${mascota.nombre}`);
+    nombre.append(enlaceNombre);
+
     titulo.append(
-        crear("h3", "", mascota.nombre),
+        nombre,
         crear("span", "sexo", mascota.sexo === "hembra" ? "♀ Hembra" : "♂ Macho")
     );
 
@@ -608,8 +624,12 @@ function crearTarjeta(mascota) {
         );
     }
 
-    // Botón para solicitar la adopción.
+    // Ver la ficha completa o solicitar la adopción directamente.
+    const acciones = crear("div", "tarjeta-acciones");
+    const verDetalle = crear("button", "boton boton-secundario", "Ver detalles");
     const boton = crear("button", "boton");
+
+    verDetalle.type = "button";
     boton.type = "button";
 
     if (adoptada) {
@@ -620,15 +640,198 @@ function crearTarjeta(mascota) {
         boton.addEventListener("click", () => abrirSolicitud(mascota));
     }
 
-    cuerpo.append(boton);
+    acciones.append(verDetalle, boton);
+    cuerpo.append(acciones);
     tarjeta.append(foto, cuerpo);
+
+    // Un clic en cualquier parte de la tarjeta abre la ficha, salvo en
+    // el botón de adoptar, que abre directamente el formulario.
+    tarjeta.addEventListener("click", evento => {
+        if (evento.target.closest("button") === boton) {
+            return;
+        }
+
+        abrirDetalle(mascota.id_mascota);
+    });
 
     return tarjeta;
 }
 
 
 // ==================================================
-// 6. SOLICITUD DE ADOPCIÓN (API DE ADOPCIONES)
+// 6. FICHA DE LA MASCOTA
+// ==================================================
+
+function abrirDetalle(idMascota) {
+    const dialogo = document.getElementById("dialogo-detalle");
+
+    app.detalleAbierto = idMascota;
+    mostrarDetalleMascota();
+
+    if (!dialogo.open) {
+        dialogo.showModal();
+    }
+
+    document.getElementById("btn-detalle-adoptar").focus();
+}
+
+function moverDetalle(paso) {
+    const lista = app.mascotasVisibles || [];
+    const actual = lista.findIndex(mascota => mascota.id_mascota === app.detalleAbierto);
+    const siguiente = actual + paso;
+
+    if (actual === -1 || siguiente < 0 || siguiente >= lista.length) {
+        return;
+    }
+
+    app.detalleAbierto = lista[siguiente].id_mascota;
+    mostrarDetalleMascota();
+}
+
+// Fecha sin hora (AAAA-MM-DD) leída como fecha local, para que no
+// aparezca el día anterior por la diferencia horaria.
+function formatearDia(valor) {
+    if (!valor) {
+        return "Sin fecha";
+    }
+
+    const [anio, mes, dia] = valor.split("-").map(Number);
+
+    return new Date(anio, mes - 1, dia).toLocaleDateString("es-CO", {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+    });
+}
+
+function crearGaleriaDetalle(mascota) {
+    const galeria = crear("div", "detalle-galeria");
+    const principal = crear("div", "detalle-foto-principal");
+    const cantidad = Math.max(mascota.fotos.length, mascota.foto_url ? 1 : 0);
+
+    principal.append(crearFoto(mascota));
+    galeria.append(principal);
+
+    if (cantidad <= 1) {
+        return galeria;
+    }
+
+    // Miniaturas: al elegir una, pasa a la foto principal
+    const miniaturas = crear("div", "detalle-miniaturas");
+
+    for (let indice = 0; indice < cantidad; indice++) {
+        const boton = crear("button", indice === 0 ? "activa" : "");
+
+        boton.type = "button";
+        boton.setAttribute("aria-label", `Ver la foto ${indice + 1} de ${cantidad}`);
+        boton.append(crearFoto(mascota, false, indice));
+        boton.addEventListener("click", () => {
+            principal.replaceChildren(crearFoto(mascota, false, indice));
+            miniaturas.querySelectorAll("button").forEach(otro => {
+                otro.classList.toggle("activa", otro === boton);
+            });
+        });
+
+        miniaturas.append(boton);
+    }
+
+    galeria.append(miniaturas);
+    return galeria;
+}
+
+function mostrarDetalleMascota() {
+    const lista = app.mascotasVisibles || [];
+    const posicion = lista.findIndex(mascota => mascota.id_mascota === app.detalleAbierto);
+    const mascota = lista[posicion] || app.mascotas.find(m => m.id_mascota === app.detalleAbierto);
+
+    if (!mascota) {
+        document.getElementById("dialogo-detalle").close();
+        return;
+    }
+
+    const o = terminacion(mascota);
+    const contenido = document.getElementById("contenido-detalle");
+
+    document.getElementById("titulo-detalle").textContent = mascota.nombre;
+
+    // Datos de la mascota
+    const info = crear("div", "detalle-info");
+    const encabezado = crear("div", "publicacion-encabezado");
+
+    encabezado.append(
+        crearEstado(mascota.estado, etiquetaEstadoMascota(mascota)),
+        crear("span", "sexo", mascota.sexo === "hembra" ? "♀ Hembra" : "♂ Macho")
+    );
+
+    const datos = crear("dl", "datos-solicitud");
+
+    [
+        ["Especie", mascota.especie === "perro" ? "Perro" : "Gato"],
+        ["Raza", mascota.raza],
+        ["Edad aproximada", formatearEdad(mascota.edad_meses)],
+        ["Tamaño", TAMANOS[mascota.tamano]],
+        ["Ubicación", textoUbicacion(mascota) || "No registrada"],
+        [
+            mascota.origen === "comunidad" ? "Publicada desde" : "En la fundación desde",
+            formatearDia(mascota.fecha_ingreso)
+        ]
+    ].forEach(([etiqueta, valor]) => {
+        const grupo = crear("div");
+        grupo.append(crear("dt", "", etiqueta), crear("dd", "", valor));
+        datos.append(grupo);
+    });
+
+    const etiquetas = crear("ul", "etiquetas");
+
+    etiquetas.append(
+        crear("li", mascota.vacunado ? "" : "pendiente", mascota.vacunado ? `Vacunad${o}` : "Vacunas pendientes"),
+        crear("li", mascota.esterilizado ? "" : "pendiente", mascota.esterilizado ? `Esterilizad${o}` : "Sin esterilizar")
+    );
+
+    info.append(encabezado, etiquetas, datos);
+
+    if (mascota.descripcion) {
+        const historia = crear("div", "cita");
+        historia.append(crear("strong", "", "Su historia"), document.createTextNode(mascota.descripcion));
+        info.append(historia);
+    }
+
+    if (mascota.estado === "en_proceso") {
+        info.append(
+            crear("p", "tarjeta-nota", "Ya tiene solicitudes en revisión, pero todavía puedes postularte.")
+        );
+    }
+
+    contenido.replaceChildren(crearGaleriaDetalle(mascota), info);
+
+    // Botones: adoptar y moverse entre las mascotas del catálogo
+    const adoptar = document.getElementById("btn-detalle-adoptar");
+    const adoptada = mascota.estado === "adoptada";
+
+    adoptar.disabled = adoptada;
+    adoptar.textContent = adoptada ? "Ya tiene un hogar" : `Quiero adoptarl${o}`;
+
+    document.getElementById("btn-detalle-anterior").disabled = posicion <= 0;
+    document.getElementById("btn-detalle-siguiente").disabled =
+        posicion === -1 || posicion >= lista.length - 1;
+    document.getElementById("posicion-detalle").textContent =
+        posicion === -1 ? "" : `${posicion + 1} de ${lista.length}`;
+}
+
+function adoptarDesdeDetalle() {
+    const mascota = app.mascotas.find(m => m.id_mascota === app.detalleAbierto);
+
+    if (!mascota || mascota.estado === "adoptada") {
+        return;
+    }
+
+    document.getElementById("dialogo-detalle").close();
+    abrirSolicitud(mascota);
+}
+
+
+// ==================================================
+// 7. SOLICITUD DE ADOPCIÓN (API DE ADOPCIONES)
 // ==================================================
 
 function abrirSolicitud(mascota) {
@@ -744,7 +947,7 @@ function mostrarResultadoSolicitud(respuesta) {
 
 
 // ==================================================
-// 7. GESTIÓN DE SOLICITUDES (PANEL DE LA FUNDACIÓN)
+// 8. GESTIÓN DE SOLICITUDES (PANEL DE LA FUNDACIÓN)
 // ==================================================
 
 async function consultarSolicitudes() {
@@ -1130,7 +1333,7 @@ async function decidirSolicitud(accion) {
 
 
 // ==================================================
-// 8. DAR EN ADOPCIÓN (API DE MASCOTAS)
+// 9. DAR EN ADOPCIÓN (API DE MASCOTAS)
 // ==================================================
 // Cualquier persona envía la mascota y queda en revisión. Si la
 // fundación tiene la sesión abierta, la mascota se publica de inmediato.
@@ -1361,7 +1564,7 @@ function mostrarResultadoRegistro(mascota) {
 
 
 // ==================================================
-// 9. PUBLICACIONES DE LA COMUNIDAD (PANEL DE LA FUNDACIÓN)
+// 10. PUBLICACIONES DE LA COMUNIDAD (PANEL DE LA FUNDACIÓN)
 // ==================================================
 
 function grupoPublicacion(mascota) {
@@ -1604,7 +1807,7 @@ function crearDecisionPublicacion(mascota) {
 
 
 // ==================================================
-// 10. ESTADO DE LOS SERVICIOS
+// 11. ESTADO DE LOS SERVICIOS
 // ==================================================
 
 async function verificarServicio(id, url) {
@@ -1628,7 +1831,7 @@ async function verificarServicio(id, url) {
 
 
 // ==================================================
-// 11. ACCESO DE LA FUNDACIÓN
+// 12. ACCESO DE LA FUNDACIÓN
 // ==================================================
 
 // La clave se guarda solo mientras la pestaña del navegador esté abierta.
@@ -1742,7 +1945,7 @@ function cerrarSesionFundacion() {
 
 
 // ==================================================
-// 12. ACCESIBILIDAD
+// 13. ACCESIBILIDAD
 // ==================================================
 // Las preferencias se guardan en este navegador. Un script en el <head>
 // de index.html las aplica antes de pintar la página.
@@ -1887,7 +2090,7 @@ function configurarAccesibilidad() {
 
 
 // ==================================================
-// 13. NAVEGACIÓN E INICIO DE LA APLICACIÓN
+// 14. NAVEGACIÓN E INICIO DE LA APLICACIÓN
 // ==================================================
 
 const VISTAS_FUNDACION = ["solicitudes", "publicaciones"];
@@ -1962,6 +2165,21 @@ document.addEventListener("DOMContentLoaded", () => {
         .addEventListener("reset", limpiarRegistro);
     document.getElementById("input-fotos")
         .addEventListener("change", agregarFotos);
+
+    // Ficha de la mascota: adoptar o pasar a otra (también con las flechas)
+    document.getElementById("btn-detalle-adoptar")
+        .addEventListener("click", adoptarDesdeDetalle);
+    document.getElementById("btn-detalle-anterior")
+        .addEventListener("click", () => moverDetalle(-1));
+    document.getElementById("btn-detalle-siguiente")
+        .addEventListener("click", () => moverDetalle(1));
+    document.getElementById("dialogo-detalle").addEventListener("keydown", evento => {
+        if (evento.key === "ArrowLeft") {
+            moverDetalle(-1);
+        } else if (evento.key === "ArrowRight") {
+            moverDetalle(1);
+        }
+    });
 
     // Listas encadenadas de país, departamento y ciudad
     document.querySelectorAll("[data-ubicacion]").forEach(configurarUbicacion);
