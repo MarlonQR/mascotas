@@ -1,0 +1,419 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="description"
+        content="Fundación Huellas de Esperanza: consulta las mascotas en adopción y envía tu solicitud."
+    >
+
+    <title>Huellas de Esperanza | Adopción responsable</title>
+
+    <link
+        rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐾</text></svg>"
+    >
+
+    <!-- Tipografía -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+    >
+
+    <!-- Hoja de estilos externa -->
+    <link rel="stylesheet" href="css/estilos.css">
+
+    <!-- Lógica de la aplicación -->
+    <script src="js/app.js" defer></script>
+</head>
+
+<body>
+
+    <!-- Encabezado -->
+    <header class="encabezado">
+        <div class="encabezado-contenido">
+            <a class="marca" href="#mascotas">
+                <svg class="marca-icono" viewBox="0 0 24 24" aria-hidden="true">
+                    <ellipse cx="5.5" cy="9.5" rx="2.1" ry="2.7"/>
+                    <ellipse cx="9.6" cy="5.4" rx="2.1" ry="2.7"/>
+                    <ellipse cx="14.4" cy="5.4" rx="2.1" ry="2.7"/>
+                    <ellipse cx="18.5" cy="9.5" rx="2.1" ry="2.7"/>
+                    <path d="M12 11.2c-3.1 0-6.2 3.6-6.2 6.4 0 1.8 1.4 2.9 3.1 2.9 1.3 0 2-.6 3.1-.6s1.8.6 3.1.6c1.7 0 3.1-1.1 3.1-2.9 0-2.8-3.1-6.4-6.2-6.4z"/>
+                </svg>
+                <span class="marca-texto">
+                    <strong>Huellas de Esperanza</strong>
+                    <small>Adopción responsable de mascotas</small>
+                </span>
+            </a>
+
+            <nav class="navegacion" aria-label="Secciones">
+                <a class="pestana" href="#mascotas" data-vista="mascotas">Adoptar</a>
+                <a class="pestana" href="#solicitudes" data-vista="solicitudes">Solicitudes</a>
+                <a class="pestana" href="#registro" data-vista="registro">Registrar mascota</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="contenido-principal">
+
+        <!-- ========== VISTA 1: MASCOTAS ========== -->
+        <section id="vista-mascotas" class="vista" aria-labelledby="titulo-mascotas">
+
+            <div class="presentacion">
+                <div class="presentacion-texto">
+                    <p class="antetitulo">Fundación Huellas de Esperanza</p>
+                    <h1 id="titulo-mascotas">Encuentra a tu próximo compañero</h1>
+                    <p>
+                        Estas mascotas fueron rescatadas y esperan una familia.
+                        Elige una y envía tu solicitud. La fundación la revisa
+                        antes de confirmar la adopción.
+                    </p>
+                </div>
+
+                <dl class="cifras" aria-label="Resumen de mascotas">
+                    <div class="cifra">
+                        <dt>Disponibles</dt>
+                        <dd id="cifra-disponibles">–</dd>
+                    </div>
+                    <div class="cifra">
+                        <dt>En proceso</dt>
+                        <dd id="cifra-en-proceso">–</dd>
+                    </div>
+                    <div class="cifra">
+                        <dt>Adoptadas</dt>
+                        <dd id="cifra-adoptadas">–</dd>
+                    </div>
+                </dl>
+            </div>
+
+            <!-- Filtros -->
+            <div class="barra-filtros">
+                <div class="grupo-chips" role="group" aria-label="Filtrar por especie">
+                    <button type="button" class="chip-filtro activo" data-especie="todas">Todas</button>
+                    <button type="button" class="chip-filtro" data-especie="perro">🐶 Perros</button>
+                    <button type="button" class="chip-filtro" data-especie="gato">🐱 Gatos</button>
+                </div>
+
+                <div class="filtros-derecha">
+                    <label class="selector">
+                        <span class="sr-only">Filtrar por estado</span>
+                        <select id="filtro-estado">
+                            <option value="todos">Todos los estados</option>
+                            <option value="disponible">Disponibles</option>
+                            <option value="en_proceso">En proceso</option>
+                            <option value="adoptada">Adoptadas</option>
+                        </select>
+                    </label>
+
+                    <button id="btn-actualizar-mascotas" type="button" class="boton boton-secundario">
+                        Actualizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mensajes de estado -->
+            <div
+                id="mensaje-mascotas"
+                class="mensaje"
+                role="status"
+                aria-live="polite"
+            ></div>
+
+            <!-- Catálogo -->
+            <div id="lista-mascotas" class="cuadricula">
+                <p class="vacio">Cargando mascotas...</p>
+            </div>
+        </section>
+
+
+        <!-- ========== VISTA 2: SOLICITUDES ========== -->
+        <section id="vista-solicitudes" class="vista" aria-labelledby="titulo-solicitudes" hidden>
+
+            <div class="titulo-seccion">
+                <div>
+                    <h2 id="titulo-solicitudes">Solicitudes de adopción</h2>
+                    <p>
+                        Panel de la fundación. Al aprobar una solicitud la mascota
+                        queda adoptada y las demás solicitudes pendientes por ella
+                        se rechazan.
+                    </p>
+                </div>
+
+                <button id="btn-actualizar-solicitudes" type="button" class="boton boton-secundario">
+                    Actualizar
+                </button>
+            </div>
+
+            <div class="grupo-chips" role="group" aria-label="Filtrar solicitudes por estado">
+                <button type="button" class="chip-filtro activo" data-estado-solicitud="todas">
+                    Todas <span class="contador" id="contador-todas">0</span>
+                </button>
+                <button type="button" class="chip-filtro" data-estado-solicitud="pendiente">
+                    Pendientes <span class="contador" id="contador-pendiente">0</span>
+                </button>
+                <button type="button" class="chip-filtro" data-estado-solicitud="aprobada">
+                    Aprobadas <span class="contador" id="contador-aprobada">0</span>
+                </button>
+                <button type="button" class="chip-filtro" data-estado-solicitud="rechazada">
+                    Rechazadas <span class="contador" id="contador-rechazada">0</span>
+                </button>
+            </div>
+
+            <div
+                id="mensaje-solicitudes"
+                class="mensaje"
+                role="status"
+                aria-live="polite"
+            ></div>
+
+            <div class="panel tabla-contenedor">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Mascota</th>
+                            <th>Solicitante</th>
+                            <th>Vivienda</th>
+                            <th>Fecha</th>
+                            <th>Estado</th>
+                            <th><span class="sr-only">Acciones</span></th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="tabla-solicitudes">
+                        <tr>
+                            <td colspan="7">Cargando solicitudes...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+
+        <!-- ========== VISTA 3: REGISTRAR MASCOTA ========== -->
+        <section id="vista-registro" class="vista" aria-labelledby="titulo-registro" hidden>
+
+            <div class="titulo-seccion">
+                <div>
+                    <h2 id="titulo-registro">Registrar mascota</h2>
+                    <p>
+                        La mascota aparece en el catálogo como disponible
+                        apenas se guarda.
+                    </p>
+                </div>
+            </div>
+
+            <form id="form-mascota" class="panel formulario" novalidate>
+                <div class="campos">
+                    <label class="campo">
+                        <span>Nombre</span>
+                        <input name="nombre" type="text" required minlength="2" maxlength="60" placeholder="Ej. Nala">
+                    </label>
+
+                    <label class="campo">
+                        <span>Especie</span>
+                        <select name="especie" required>
+                            <option value="perro">Perro</option>
+                            <option value="gato">Gato</option>
+                        </select>
+                    </label>
+
+                    <label class="campo">
+                        <span>Raza</span>
+                        <input name="raza" type="text" required minlength="2" maxlength="60" value="Mestizo">
+                    </label>
+
+                    <label class="campo">
+                        <span>Sexo</span>
+                        <select name="sexo" required>
+                            <option value="hembra">Hembra</option>
+                            <option value="macho">Macho</option>
+                        </select>
+                    </label>
+
+                    <div class="campo">
+                        <span id="etiqueta-edad">Edad aproximada</span>
+                        <div class="campo-doble" role="group" aria-labelledby="etiqueta-edad">
+                            <label>
+                                <input name="anios" type="number" min="0" max="25" value="1" required>
+                                <small>años</small>
+                            </label>
+                            <label>
+                                <input name="meses" type="number" min="0" max="11" value="0" required>
+                                <small>meses</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <label class="campo">
+                        <span>Tamaño</span>
+                        <select name="tamano" required>
+                            <option value="pequeno">Pequeño</option>
+                            <option value="mediano" selected>Mediano</option>
+                            <option value="grande">Grande</option>
+                        </select>
+                    </label>
+
+                    <label class="campo campo-ancho">
+                        <span>URL de la foto <small>(opcional)</small></span>
+                        <input name="foto_url" type="url" maxlength="500" placeholder="https://...">
+                    </label>
+
+                    <label class="campo campo-ancho">
+                        <span>Descripción</span>
+                        <textarea name="descripcion" rows="3" maxlength="600" placeholder="Carácter, cuidados especiales, con quién convive bien..."></textarea>
+                    </label>
+
+                    <div class="campo campo-ancho casillas">
+                        <label class="casilla">
+                            <input name="vacunado" type="checkbox" checked>
+                            Vacunas al día
+                        </label>
+                        <label class="casilla">
+                            <input name="esterilizado" type="checkbox">
+                            Esterilizado
+                        </label>
+                    </div>
+                </div>
+
+                <p id="error-mascota" class="error-formulario" role="alert"></p>
+
+                <div class="acciones-formulario">
+                    <button type="reset" class="boton boton-secundario">Limpiar</button>
+                    <button type="submit" class="boton">Registrar mascota</button>
+                </div>
+            </form>
+        </section>
+
+    </main>
+
+
+    <!-- ========== DIÁLOGO: SOLICITAR ADOPCIÓN ========== -->
+    <dialog id="dialogo-solicitud" class="dialogo" aria-labelledby="titulo-dialogo-solicitud">
+        <form id="form-solicitud" novalidate>
+            <div class="dialogo-encabezado">
+                <h2 id="titulo-dialogo-solicitud">Solicitud de adopción</h2>
+                <button type="button" class="boton-cerrar" data-cerrar aria-label="Cerrar">×</button>
+            </div>
+
+            <div id="resumen-mascota-solicitud" class="resumen-mascota"></div>
+
+            <div class="campos">
+                <label class="campo campo-ancho">
+                    <span>Nombre completo</span>
+                    <input name="nombre_solicitante" type="text" required minlength="3" maxlength="100" autocomplete="name">
+                </label>
+
+                <label class="campo">
+                    <span>Documento de identidad</span>
+                    <input name="documento" type="text" inputmode="numeric" required pattern="\d{6,12}" maxlength="12" placeholder="Solo números">
+                </label>
+
+                <label class="campo">
+                    <span>Teléfono</span>
+                    <input name="telefono" type="tel" required pattern="\+?\d{7,14}" maxlength="15" autocomplete="tel" placeholder="3001234567">
+                </label>
+
+                <label class="campo">
+                    <span>Correo electrónico</span>
+                    <input name="correo" type="email" required maxlength="120" autocomplete="email">
+                </label>
+
+                <label class="campo">
+                    <span>Ciudad</span>
+                    <input name="ciudad" type="text" required minlength="3" maxlength="60" value="Cúcuta">
+                </label>
+
+                <label class="campo">
+                    <span>Tipo de vivienda</span>
+                    <select name="tipo_vivienda" required>
+                        <option value="casa">Casa</option>
+                        <option value="apartamento">Apartamento</option>
+                        <option value="finca">Finca</option>
+                    </select>
+                </label>
+
+                <label class="campo casilla casilla-alineada">
+                    <input name="otras_mascotas" type="checkbox">
+                    Tengo otras mascotas en casa
+                </label>
+
+                <label class="campo campo-ancho">
+                    <span>¿Por qué quieres adoptar?</span>
+                    <textarea name="motivo" rows="4" required minlength="20" maxlength="1000" placeholder="Cuéntanos quiénes viven en casa, cuánto tiempo pasa sola la mascota y cómo la vas a cuidar."></textarea>
+                </label>
+            </div>
+
+            <p id="error-solicitud" class="error-formulario" role="alert"></p>
+
+            <div class="acciones-formulario">
+                <button type="button" class="boton boton-secundario" data-cerrar>Cancelar</button>
+                <button type="submit" class="boton">Enviar solicitud</button>
+            </div>
+        </form>
+
+        <div id="resultado-solicitud" class="resultado-exito" hidden></div>
+    </dialog>
+
+
+    <!-- ========== DIÁLOGO: REVISAR SOLICITUD ========== -->
+    <dialog id="dialogo-revision" class="dialogo" aria-labelledby="titulo-dialogo-revision">
+        <div class="dialogo-encabezado">
+            <h2 id="titulo-dialogo-revision">Solicitud</h2>
+            <button type="button" class="boton-cerrar" data-cerrar aria-label="Cerrar">×</button>
+        </div>
+
+        <div id="detalle-solicitud" aria-live="polite">
+            <p>Cargando solicitud...</p>
+        </div>
+
+        <form id="form-decision" class="decision" novalidate hidden>
+            <label class="campo">
+                <span>Observación</span>
+                <textarea name="observacion" rows="2" maxlength="500" placeholder="Obligatoria para rechazar. Ej.: visita domiciliaria aprobada."></textarea>
+            </label>
+
+            <p id="error-decision" class="error-formulario" role="alert"></p>
+
+            <div class="acciones-formulario">
+                <button type="button" id="btn-rechazar" class="boton boton-peligro">Rechazar</button>
+                <button type="button" id="btn-aprobar" class="boton boton-exito">Aprobar adopción</button>
+            </div>
+        </form>
+    </dialog>
+
+
+    <!-- Aviso flotante -->
+    <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
+
+
+    <!-- Pie de página -->
+    <footer class="pie-pagina">
+        <div class="pie-contenido">
+            <div>
+                <p><strong>Fundación Huellas de Esperanza</strong></p>
+                <p>Examen 2 · Arquitectura Orientada a Servicios (SOA)</p>
+            </div>
+
+            <div class="servicios" aria-label="Estado de los servicios">
+                <a id="estado-api-mascotas" class="servicio" target="_blank" rel="noopener noreferrer">
+                    <span class="punto" aria-hidden="true"></span>
+                    API de Mascotas
+                    <span class="servicio-estado">verificando</span>
+                </a>
+                <a id="estado-api-adopciones" class="servicio" target="_blank" rel="noopener noreferrer">
+                    <span class="punto" aria-hidden="true"></span>
+                    API de Adopciones
+                    <span class="servicio-estado">verificando</span>
+                </a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
