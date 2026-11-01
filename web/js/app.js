@@ -14,11 +14,10 @@ const ES_LOCAL =
 
 const API_MASCOTAS = ES_LOCAL
     ? "http://127.0.0.1:8001"
-    : "https://REEMPLAZAR-api-mascotas.vercel.app";
-
+    : "https://mascotas-blue.vercel.app"
 const API_ADOPCIONES = ES_LOCAL
     ? "http://127.0.0.1:8000"
-    : "https://REEMPLAZAR-api-adopciones.vercel.app";
+    : "https://mascotas-2pue.vercel.app";
 
 
 // ==================================================
