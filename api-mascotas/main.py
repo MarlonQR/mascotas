@@ -1,10 +1,12 @@
 
+import base64
 import os
+import re
 import secrets
 from datetime import date, datetime
 from typing import Annotated, Literal, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Path, Query, Security
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Response, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
@@ -16,11 +18,13 @@ app = FastAPI(
     description=(
         "Servicio de la Fundación Huellas de Esperanza para registrar las "
         "mascotas, consultarlas y controlar su disponibilidad.\n\n"
+        "Cualquier persona puede dar una mascota en adopción: queda "
+        "`en_revision` hasta que la fundación la publique.\n\n"
         "La API de Adopciones consume los endpoints de **Disponibilidad** "
         "para saber si una mascota puede recibir solicitudes y para "
         "actualizar su estado cuando una solicitud se aprueba o se rechaza."
     ),
-    version="1.0.0",
+    version="2.0.0",
     openapi_tags=[
         {
             "name": "Servicio",
@@ -28,7 +32,14 @@ app = FastAPI(
         },
         {
             "name": "Mascotas",
-            "description": "Registro y consulta de mascotas."
+            "description": "Registro y consulta de mascotas publicadas."
+        },
+        {
+            "name": "Publicaciones",
+            "description": (
+                "Revisión de las mascotas que envía la comunidad. "
+                "Solo la fundación (requiere clave)."
+            )
         },
         {
             "name": "Disponibilidad",
@@ -56,16 +67,21 @@ app.add_middleware(
 Especie = Literal["perro", "gato"]
 Sexo = Literal["macho", "hembra"]
 Tamano = Literal["pequeno", "mediano", "grande"]
-EstadoMascota = Literal["disponible", "en_proceso", "adoptada"]
+Origen = Literal["fundacion", "comunidad"]
+
+# en_revision y no_publicada no se ven en el catálogo público
+EstadoMascota = Literal["en_revision", "no_publicada", "disponible", "en_proceso", "adoptada"]
+EstadoPublicado = Literal["disponible", "en_proceso", "adoptada"]
+ESTADOS_PUBLICADOS = ("disponible", "en_proceso", "adoptada")
 
 IdMascota = Annotated[
     int,
     Path(gt=0, le=2147483647, description="Identificador de la mascota")
 ]
 
-# Cambios de estado permitidos. Una mascota adoptada solo sale de ese
-# estado si la adopción se revierte; la API de Adopciones lo usa como
-# compensación cuando no logra guardar una aprobación.
+# Cambios de estado permitidos para mascotas publicadas. Una mascota
+# adoptada solo sale de ese estado si la adopción se revierte; la API de
+# Adopciones lo usa como compensación cuando no logra guardar una aprobación.
 TRANSICIONES = {
     "disponible": {"en_proceso", "adoptada"},
     "en_proceso": {"disponible", "adoptada"},
@@ -73,6 +89,8 @@ TRANSICIONES = {
 }
 
 MENSAJES_DISPONIBILIDAD = {
+    "en_revision": "La mascota todavía no ha sido publicada por la fundación.",
+    "no_publicada": "La fundación no aprobó la publicación de esta mascota.",
     "disponible": "La mascota está disponible para adopción.",
     "en_proceso": (
         "La mascota tiene solicitudes en revisión, "
@@ -84,13 +102,38 @@ MENSAJES_DISPONIBILIDAD = {
 COLUMNAS = """
     id_mascota, nombre, especie, raza, sexo, edad_meses, tamano,
     vacunado, esterilizado, descripcion, foto_url, estado,
-    fecha_ingreso, fecha_actualizacion
+    fecha_ingreso, fecha_actualizacion, origen, pais, departamento,
+    ciudad, contacto_nombre, contacto_telefono, contacto_correo,
+    observacion_revision
 """
+
+# Fotos: hasta 3 por mascota, 1 MB cada una. El frontend las reduce
+# antes de enviarlas, así que en la práctica pesan entre 100 y 300 KB.
+MAXIMO_FOTOS = 3
+MAXIMO_BYTES_FOTO = 1_000_000
+PATRON_FOTO = re.compile(r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$")
+FIRMAS_FOTO = {
+    "image/jpeg": lambda datos: datos.startswith(b"\xff\xd8\xff"),
+    "image/png": lambda datos: datos.startswith(b"\x89PNG\r\n\x1a\n"),
+    "image/webp": lambda datos: datos[:4] == b"RIFF" and datos[8:12] == b"WEBP",
+}
 
 
 # ==================================================
 # 2. MODELOS
 # ==================================================
+
+class Contacto(BaseModel):
+    nombre: str = Field(min_length=3, max_length=100)
+    telefono: str = Field(
+        pattern=r"^\+?\d{7,14}$",
+        description="Solo dígitos, con + opcional al inicio"
+    )
+    correo: str = Field(
+        max_length=120,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    )
+
 
 class Mascota(BaseModel):
     nombre: str = Field(min_length=2, max_length=60)
@@ -105,7 +148,22 @@ class Mascota(BaseModel):
     vacunado: bool = False
     esterilizado: bool = False
     descripcion: Optional[str] = Field(None, max_length=600)
-    foto_url: Optional[str] = Field(None, max_length=500)
+    foto_url: Optional[str] = Field(
+        None, max_length=500,
+        description="Foto externa opcional. Las fotos subidas van en `fotos`"
+    )
+    pais: Optional[str] = Field(None, min_length=2, max_length=80)
+    departamento: Optional[str] = Field(None, min_length=2, max_length=80)
+    ciudad: Optional[str] = Field(None, min_length=2, max_length=80)
+    contacto: Optional[Contacto] = Field(
+        None,
+        description="Quién entrega la mascota. Obligatorio si no es la fundación"
+    )
+    fotos: list[str] = Field(
+        default=[],
+        max_length=MAXIMO_FOTOS,
+        description="Hasta 3 imágenes como data URL (JPEG, PNG o WebP), máximo 1 MB cada una"
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -120,7 +178,15 @@ class Mascota(BaseModel):
                     "vacunado": True,
                     "esterilizado": True,
                     "descripcion": "Llegó desde Villa del Rosario. Es tranquila y le gusta dormir al sol.",
-                    "foto_url": None
+                    "pais": "Colombia",
+                    "departamento": "Norte de Santander",
+                    "ciudad": "Villa del Rosario",
+                    "contacto": {
+                        "nombre": "Andrés Ropero",
+                        "telefono": "3157778899",
+                        "correo": "andres.ropero@example.com"
+                    },
+                    "fotos": []
                 }
             ]
         }
@@ -139,9 +205,21 @@ class MascotaRespuesta(BaseModel):
     esterilizado: bool
     descripcion: Optional[str]
     foto_url: Optional[str]
+    fotos: list[str] = Field(
+        description="Rutas de las fotos subidas, relativas a esta API"
+    )
     estado: EstadoMascota
+    origen: Origen
+    pais: Optional[str]
+    departamento: Optional[str]
+    ciudad: Optional[str]
     fecha_ingreso: date
     fecha_actualizacion: datetime
+
+
+class PublicacionRespuesta(MascotaRespuesta):
+    contacto: Optional[Contacto]
+    observacion_revision: Optional[str]
 
 
 class Disponibilidad(BaseModel):
@@ -155,7 +233,7 @@ class Disponibilidad(BaseModel):
 
 
 class CambioEstado(BaseModel):
-    estado: EstadoMascota
+    estado: EstadoPublicado
 
     model_config = {
         "json_schema_extra": {"examples": [{"estado": "adoptada"}]}
@@ -166,6 +244,17 @@ class CambioEstadoRespuesta(BaseModel):
     mensaje: str
     estado_anterior: EstadoMascota
     mascota: MascotaRespuesta
+
+
+class Revision(BaseModel):
+    observacion: Optional[str] = Field(None, max_length=500)
+
+
+class RechazoPublicacion(BaseModel):
+    observacion: str = Field(
+        min_length=5, max_length=500,
+        description="Motivo por el que no se publica"
+    )
 
 
 class Error(BaseModel):
@@ -179,44 +268,8 @@ ERROR_401 = {
 }
 
 
-# ==================================================
-# 3. CLAVE DE LA FUNDACIÓN
-# ==================================================
-# Registrar mascotas y cambiar su estado exige el encabezado
-# X-Clave-Admin con el valor de la variable de entorno CLAVE_ADMIN.
-# La API de Adopciones envía la misma clave cuando cambia un estado.
-
-esquema_clave = APIKeyHeader(
-    name="X-Clave-Admin",
-    auto_error=False,
-    description="Clave de administrador de la fundación (variable CLAVE_ADMIN)"
-)
-
-
-def verificar_clave_admin(clave: Optional[str] = Security(esquema_clave)):
-    esperada = os.getenv("CLAVE_ADMIN", "").strip()
-
-    if not esperada:
-        raise HTTPException(
-            status_code=503,
-            detail="El servidor no tiene configurada la variable CLAVE_ADMIN"
-        )
-
-    # compare_digest evita deducir la clave midiendo el tiempo de respuesta.
-    if not clave or not secrets.compare_digest(
-        clave.strip().encode(), esperada.encode()
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="Clave de administrador incorrecta"
-        )
-
-
-SOLO_FUNDACION = [Depends(verificar_clave_admin)]
-
-
-def convertir_mascota(fila):
-    return {
+def convertir_mascota(fila, fotos=None, privado=False):
+    mascota = {
         "id_mascota": fila[0],
         "nombre": fila[1],
         "especie": fila[2],
@@ -228,10 +281,126 @@ def convertir_mascota(fila):
         "esterilizado": fila[8],
         "descripcion": fila[9],
         "foto_url": fila[10],
+        "fotos": fotos or [],
         "estado": fila[11],
+        "origen": fila[14],
+        "pais": fila[15],
+        "departamento": fila[16],
+        "ciudad": fila[17],
         "fecha_ingreso": fila[12],
         "fecha_actualizacion": fila[13]
     }
+
+    # Los datos de contacto de quien entrega la mascota solo los ve la fundación
+    if privado:
+        mascota["contacto"] = {
+            "nombre": fila[18],
+            "telefono": fila[19],
+            "correo": fila[20]
+        } if fila[18] else None
+        mascota["observacion_revision"] = fila[21]
+
+    return mascota
+
+
+def rutas_fotos(cursor, ids):
+    if not ids:
+        return {}
+
+    cursor.execute(
+        """
+        SELECT id_mascota, orden
+        FROM fotos_mascotas
+        WHERE id_mascota = ANY(%s)
+        ORDER BY id_mascota, orden;
+        """,
+        (list(ids),)
+    )
+
+    rutas = {}
+
+    for id_mascota, orden in cursor.fetchall():
+        rutas.setdefault(id_mascota, []).append(
+            f"/mascotas/{id_mascota}/fotos/{orden}"
+        )
+
+    return rutas
+
+
+def decodificar_foto(numero, valor):
+    coincidencia = PATRON_FOTO.match(valor.strip())
+
+    if not coincidencia:
+        raise HTTPException(
+            status_code=422,
+            detail=f"La foto {numero} debe ser una imagen JPEG, PNG o WebP"
+        )
+
+    tipo = coincidencia.group(1)
+
+    try:
+        datos = base64.b64decode(coincidencia.group(2), validate=False)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"La foto {numero} no se pudo leer"
+        )
+
+    if len(datos) > MAXIMO_BYTES_FOTO:
+        raise HTTPException(
+            status_code=422,
+            detail=f"La foto {numero} pesa más de 1 MB"
+        )
+
+    # Se revisan los primeros bytes para no guardar archivos que no son imágenes
+    if not FIRMAS_FOTO[tipo](datos):
+        raise HTTPException(
+            status_code=422,
+            detail=f"La foto {numero} no es una imagen válida"
+        )
+
+    return tipo, datos
+
+
+# ==================================================
+# 3. CLAVE DE LA FUNDACIÓN
+# ==================================================
+# Revisar publicaciones y cambiar el estado de una mascota exige el
+# encabezado X-Clave-Admin con el valor de la variable CLAVE_ADMIN.
+# La API de Adopciones envía la misma clave cuando cambia un estado.
+# Si la fundación registra una mascota con su clave, se publica de inmediato.
+
+esquema_clave = APIKeyHeader(
+    name="X-Clave-Admin",
+    auto_error=False,
+    description="Clave de administrador de la fundación (variable CLAVE_ADMIN)"
+)
+
+
+def es_fundacion(clave):
+    esperada = os.getenv("CLAVE_ADMIN", "").strip()
+
+    # compare_digest evita deducir la clave midiendo el tiempo de respuesta.
+    return bool(esperada) and bool(clave) and secrets.compare_digest(
+        clave.strip().encode(), esperada.encode()
+    )
+
+
+def verificar_clave_admin(clave: Optional[str] = Security(esquema_clave)):
+    if not os.getenv("CLAVE_ADMIN", "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="El servidor no tiene configurada la variable CLAVE_ADMIN"
+        )
+
+    if not es_fundacion(clave):
+        raise HTTPException(
+            status_code=401,
+            detail="Clave de administrador incorrecta"
+        )
+
+
+SOLO_FUNDACION = [Depends(verificar_clave_admin)]
 
 
 # ==================================================
@@ -247,15 +416,16 @@ def inicio():
     "/mascotas",
     response_model=list[MascotaRespuesta],
     tags=["Mascotas"],
-    summary="Listar mascotas",
+    summary="Listar mascotas publicadas",
     description=(
-        "Devuelve las mascotas registradas. Aparecen primero las "
-        "disponibles, luego las que están en proceso y al final las adoptadas."
+        "Devuelve las mascotas del catálogo. Aparecen primero las "
+        "disponibles, luego las que están en proceso y al final las adoptadas. "
+        "Las mascotas en revisión no aparecen aquí."
     )
 )
 def consultar_mascotas(
     especie: Optional[Especie] = Query(None, description="Filtrar por especie"),
-    estado: Optional[EstadoMascota] = Query(None, description="Filtrar por estado")
+    estado: Optional[EstadoPublicado] = Query(None, description="Filtrar por estado")
 ):
     conexion = None
     cursor = None
@@ -268,7 +438,8 @@ def consultar_mascotas(
             f"""
             SELECT {COLUMNAS}
             FROM mascotas
-            WHERE (%s IS NULL OR especie = %s)
+            WHERE estado IN %s
+              AND (%s IS NULL OR especie = %s)
               AND (%s IS NULL OR estado = %s)
             ORDER BY
                 CASE estado
@@ -278,10 +449,13 @@ def consultar_mascotas(
                 END,
                 id_mascota;
             """,
-            (especie, especie, estado, estado)
+            (ESTADOS_PUBLICADOS, especie, especie, estado, estado)
         )
 
-        return [convertir_mascota(fila) for fila in cursor.fetchall()]
+        filas = cursor.fetchall()
+        fotos = rutas_fotos(cursor, [fila[0] for fila in filas])
+
+        return [convertir_mascota(fila, fotos.get(fila[0])) for fila in filas]
 
     except Exception:
         raise HTTPException(
@@ -297,14 +471,7 @@ def consultar_mascotas(
             conexion.close()
 
 
-@app.get(
-    "/mascotas/{id_mascota}",
-    response_model=MascotaRespuesta,
-    responses=ERROR_404,
-    tags=["Mascotas"],
-    summary="Consultar una mascota"
-)
-def consultar_mascota(id_mascota: IdMascota):
+def buscar_mascota(id_mascota, privado=False):
     conexion = None
     cursor = None
 
@@ -325,7 +492,9 @@ def consultar_mascota(id_mascota: IdMascota):
                 detail="Mascota no encontrada"
             )
 
-        return convertir_mascota(fila)
+        fotos = rutas_fotos(cursor, [id_mascota])
+
+        return convertir_mascota(fila, fotos.get(id_mascota), privado)
 
     except HTTPException:
         raise
@@ -344,20 +513,138 @@ def consultar_mascota(id_mascota: IdMascota):
             conexion.close()
 
 
+@app.get(
+    "/mascotas/{id_mascota}",
+    response_model=MascotaRespuesta,
+    responses=ERROR_404,
+    tags=["Mascotas"],
+    summary="Consultar una mascota",
+    description="Las mascotas sin publicar solo las puede consultar la fundación."
+)
+def consultar_mascota(
+    id_mascota: IdMascota,
+    clave: Optional[str] = Security(esquema_clave)
+):
+    mascota = buscar_mascota(id_mascota)
+
+    if mascota["estado"] not in ESTADOS_PUBLICADOS and not es_fundacion(clave):
+        raise HTTPException(
+            status_code=404,
+            detail="Mascota no encontrada"
+        )
+
+    return mascota
+
+
+@app.get(
+    "/mascotas/{id_mascota}/fotos/{orden}",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/jpeg": {}, "image/png": {}, "image/webp": {}}},
+        404: {"model": Error, "description": "La foto no existe"}
+    },
+    tags=["Mascotas"],
+    summary="Descargar una foto de la mascota"
+)
+def consultar_foto(
+    id_mascota: IdMascota,
+    orden: int = Path(ge=1, le=MAXIMO_FOTOS, description="Número de la foto (1 a 3)")
+):
+    conexion = None
+    cursor = None
+
+    try:
+        conexion = obtener_conexion()
+        cursor = conexion.cursor()
+
+        cursor.execute(
+            """
+            SELECT tipo, contenido
+            FROM fotos_mascotas
+            WHERE id_mascota = %s AND orden = %s;
+            """,
+            (id_mascota, orden)
+        )
+
+        fila = cursor.fetchone()
+
+        if fila is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Foto no encontrada"
+            )
+
+        # Las fotos no cambian, el navegador puede guardarlas un día.
+        return Response(
+            content=bytes(fila[1]),
+            media_type=fila[0],
+            headers={"Cache-Control": "public, max-age=86400"}
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Error al consultar la foto"
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if conexion:
+            conexion.close()
+
+
 @app.post(
     "/mascotas",
     response_model=MascotaRespuesta,
     status_code=201,
-    responses=ERROR_401,
-    dependencies=SOLO_FUNDACION,
     tags=["Mascotas"],
-    summary="Registrar una mascota (requiere clave)",
+    summary="Dar una mascota en adopción",
     description=(
-        "Toda mascota nueva queda en estado `disponible`. "
-        "Requiere el encabezado `X-Clave-Admin`."
+        "Cualquier persona puede enviar una mascota. Debe incluir `contacto`, "
+        "la ubicación (`pais`, `departamento`, `ciudad`) y al menos una foto. "
+        "La mascota queda `en_revision` hasta que la fundación la publique.\n\n"
+        "Si la petición trae el encabezado `X-Clave-Admin` correcto, la registra "
+        "la fundación: queda `disponible` de inmediato y el contacto es opcional."
     )
 )
-def registrar_mascota(datos: Mascota):
+def registrar_mascota(
+    datos: Mascota,
+    clave: Optional[str] = Security(esquema_clave)
+):
+    fundacion = es_fundacion(clave)
+
+    if not fundacion:
+        faltantes = []
+
+        if datos.contacto is None:
+            faltantes.append("datos de contacto")
+
+        if not (datos.pais and datos.departamento and datos.ciudad):
+            faltantes.append("ubicación")
+
+        if not datos.fotos:
+            faltantes.append("al menos una foto")
+
+        if not datos.descripcion or len(datos.descripcion.strip()) < 20:
+            faltantes.append("descripción de al menos 20 caracteres")
+
+        if faltantes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Falta información: {', '.join(faltantes)}"
+            )
+
+    fotos = [
+        decodificar_foto(numero, valor)
+        for numero, valor in enumerate(datos.fotos, start=1)
+    ]
+
+    contacto = datos.contacto
     conexion = None
     cursor = None
 
@@ -369,9 +656,12 @@ def registrar_mascota(datos: Mascota):
             f"""
             INSERT INTO mascotas (
                 nombre, especie, raza, sexo, edad_meses, tamano,
-                vacunado, esterilizado, descripcion, foto_url
+                vacunado, esterilizado, descripcion, foto_url, estado,
+                origen, pais, departamento, ciudad, contacto_nombre,
+                contacto_telefono, contacto_correo
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {COLUMNAS};
             """,
             (
@@ -383,15 +673,36 @@ def registrar_mascota(datos: Mascota):
                 datos.tamano,
                 datos.vacunado,
                 datos.esterilizado,
-                datos.descripcion,
-                datos.foto_url or None
+                datos.descripcion.strip() if datos.descripcion else None,
+                datos.foto_url or None,
+                "disponible" if fundacion else "en_revision",
+                "fundacion" if fundacion else "comunidad",
+                datos.pais,
+                datos.departamento,
+                datos.ciudad,
+                contacto.nombre.strip() if contacto else None,
+                contacto.telefono if contacto else None,
+                contacto.correo.strip().lower() if contacto else None
             )
         )
 
         fila = cursor.fetchone()
+        id_mascota = fila[0]
+
+        for orden, (tipo, contenido) in enumerate(fotos, start=1):
+            cursor.execute(
+                """
+                INSERT INTO fotos_mascotas (id_mascota, orden, tipo, contenido)
+                VALUES (%s, %s, %s, %s);
+                """,
+                (id_mascota, orden, tipo, contenido)
+            )
+
         conexion.commit()
 
-        return convertir_mascota(fila)
+        rutas = [f"/mascotas/{id_mascota}/fotos/{orden}" for orden in range(1, len(fotos) + 1)]
+
+        return convertir_mascota(fila, rutas)
 
     except Exception:
         if conexion:
@@ -411,6 +722,167 @@ def registrar_mascota(datos: Mascota):
 
 
 @app.get(
+    "/publicaciones",
+    response_model=list[PublicacionRespuesta],
+    responses=ERROR_401,
+    dependencies=SOLO_FUNDACION,
+    tags=["Publicaciones"],
+    summary="Listar mascotas enviadas por la comunidad (requiere clave)",
+    description="Incluye los datos de contacto de quien entrega la mascota."
+)
+def consultar_publicaciones(
+    estado: Literal["en_revision", "no_publicada", "todas"] = Query(
+        "en_revision",
+        description="`todas` incluye también las ya publicadas"
+    )
+):
+    conexion = None
+    cursor = None
+
+    try:
+        conexion = obtener_conexion()
+        cursor = conexion.cursor()
+
+        cursor.execute(
+            f"""
+            SELECT {COLUMNAS}
+            FROM mascotas
+            WHERE origen = 'comunidad'
+              AND (%s = 'todas' OR estado = %s)
+            ORDER BY
+                CASE estado WHEN 'en_revision' THEN 1 ELSE 2 END,
+                fecha_actualizacion DESC;
+            """,
+            (estado, estado)
+        )
+
+        filas = cursor.fetchall()
+        fotos = rutas_fotos(cursor, [fila[0] for fila in filas])
+
+        return [
+            convertir_mascota(fila, fotos.get(fila[0]), privado=True)
+            for fila in filas
+        ]
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Error al consultar las publicaciones"
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if conexion:
+            conexion.close()
+
+
+def resolver_publicacion(id_mascota, estado_nuevo, observacion):
+    conexion = None
+    cursor = None
+
+    try:
+        conexion = obtener_conexion()
+        cursor = conexion.cursor()
+
+        cursor.execute(
+            f"""
+            UPDATE mascotas
+            SET estado = %s,
+                observacion_revision = %s,
+                fecha_actualizacion = NOW()
+            WHERE id_mascota = %s AND estado = 'en_revision'
+            RETURNING {COLUMNAS};
+            """,
+            (estado_nuevo, observacion, id_mascota)
+        )
+
+        fila = cursor.fetchone()
+
+        if fila is None:
+            # O no existe, o ya se había revisado
+            cursor.execute(
+                "SELECT estado FROM mascotas WHERE id_mascota = %s;",
+                (id_mascota,)
+            )
+            actual = cursor.fetchone()
+
+            if actual is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Mascota no encontrada"
+                )
+
+            raise HTTPException(
+                status_code=409,
+                detail=f"La mascota no está en revisión (estado actual: {actual[0]})"
+            )
+
+        fotos = rutas_fotos(cursor, [id_mascota])
+        conexion.commit()
+
+        return convertir_mascota(fila, fotos.get(id_mascota), privado=True)
+
+    except HTTPException:
+        if conexion:
+            conexion.rollback()
+
+        raise
+
+    except Exception:
+        if conexion:
+            conexion.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Error al revisar la publicación"
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if conexion:
+            conexion.close()
+
+
+@app.patch(
+    "/mascotas/{id_mascota}/publicar",
+    response_model=PublicacionRespuesta,
+    responses={
+        **ERROR_401,
+        **ERROR_404,
+        409: {"model": Error, "description": "La mascota no está en revisión"}
+    },
+    dependencies=SOLO_FUNDACION,
+    tags=["Publicaciones"],
+    summary="Publicar una mascota enviada por la comunidad (requiere clave)",
+    description="Pasa de `en_revision` a `disponible` y aparece en el catálogo."
+)
+def publicar_mascota(id_mascota: IdMascota, datos: Optional[Revision] = None):
+    observacion = datos.observacion.strip() if datos and datos.observacion else None
+    return resolver_publicacion(id_mascota, "disponible", observacion)
+
+
+@app.patch(
+    "/mascotas/{id_mascota}/rechazar-publicacion",
+    response_model=PublicacionRespuesta,
+    responses={
+        **ERROR_401,
+        **ERROR_404,
+        409: {"model": Error, "description": "La mascota no está en revisión"}
+    },
+    dependencies=SOLO_FUNDACION,
+    tags=["Publicaciones"],
+    summary="No publicar una mascota enviada por la comunidad (requiere clave)",
+    description="Pasa de `en_revision` a `no_publicada`. El motivo es obligatorio."
+)
+def rechazar_publicacion(id_mascota: IdMascota, datos: RechazoPublicacion):
+    return resolver_publicacion(id_mascota, "no_publicada", datos.observacion.strip())
+
+
+@app.get(
     "/mascotas/{id_mascota}/disponibilidad",
     response_model=Disponibilidad,
     responses=ERROR_404,
@@ -418,19 +890,19 @@ def registrar_mascota(datos: Mascota):
     summary="Verificar si una mascota puede ser adoptada",
     description=(
         "`disponible` es true cuando la mascota está en estado "
-        "`disponible` o `en_proceso`. Una mascota adoptada ya no "
-        "recibe solicitudes."
+        "`disponible` o `en_proceso`. Una mascota adoptada o sin publicar "
+        "no recibe solicitudes."
     )
 )
 def consultar_disponibilidad(id_mascota: IdMascota):
-    mascota = consultar_mascota(id_mascota)
+    mascota = buscar_mascota(id_mascota)
     estado = mascota["estado"]
 
     return {
         "id_mascota": mascota["id_mascota"],
         "nombre": mascota["nombre"],
         "estado": estado,
-        "disponible": estado != "adoptada",
+        "disponible": estado in ("disponible", "en_proceso"),
         "mensaje": MENSAJES_DISPONIBILIDAD[estado]
     }
 
@@ -453,7 +925,8 @@ def consultar_disponibilidad(id_mascota: IdMascota):
         "- `en_proceso` → `disponible` o `adoptada`\n"
         "- `adoptada` → `disponible` o `en_proceso` (solo si la adopción se revierte)\n\n"
         "Marcar como `adoptada` una mascota que ya lo está devuelve 409. "
-        "Así el servicio de Mascotas también impide una segunda adopción."
+        "Así el servicio de Mascotas también impide una segunda adopción. "
+        "Las mascotas sin publicar no cambian de estado por aquí."
     )
 )
 def cambiar_estado(id_mascota: IdMascota, datos: CambioEstado):
@@ -487,6 +960,12 @@ def cambiar_estado(id_mascota: IdMascota, datos: CambioEstado):
         estado_anterior = fila[0]
         estado_nuevo = datos.estado
 
+        if estado_anterior not in TRANSICIONES:
+            raise HTTPException(
+                status_code=409,
+                detail="La mascota no está publicada"
+            )
+
         if estado_anterior == "adoptada" and estado_nuevo == "adoptada":
             raise HTTPException(
                 status_code=409,
@@ -516,7 +995,8 @@ def cambiar_estado(id_mascota: IdMascota, datos: CambioEstado):
             (estado_nuevo, id_mascota)
         )
 
-        mascota = convertir_mascota(cursor.fetchone())
+        fila = cursor.fetchone()
+        fotos = rutas_fotos(cursor, [id_mascota])
         conexion.commit()
 
         if estado_nuevo == estado_anterior:
@@ -530,7 +1010,7 @@ def cambiar_estado(id_mascota: IdMascota, datos: CambioEstado):
         return {
             "mensaje": mensaje,
             "estado_anterior": estado_anterior,
-            "mascota": mascota
+            "mascota": convertir_mascota(fila, fotos.get(id_mascota))
         }
 
     except HTTPException:

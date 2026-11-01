@@ -22,8 +22,24 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Lexend:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap"
     >
+
+    <!-- Preferencias de accesibilidad antes de pintar, para evitar parpadeos -->
+    <script>
+        try {
+            const preferencias = JSON.parse(localStorage.getItem("accesibilidad") || "{}");
+            const raiz = document.documentElement;
+            raiz.dataset.tema = preferencias.tema || "claro";
+            raiz.dataset.fuente = preferencias.fuente || "predeterminada";
+            raiz.style.setProperty("--escala", preferencias.escala || 1);
+            raiz.classList.toggle("a11y-espaciado", Boolean(preferencias.espaciado));
+            raiz.classList.toggle("a11y-enlaces", Boolean(preferencias.enlaces));
+            raiz.classList.toggle("a11y-sin-animaciones", Boolean(preferencias.sinAnimaciones));
+        } catch (error) {
+            // Sin almacenamiento se usan los valores por defecto.
+        }
+    </script>
 
     <!-- Hoja de estilos externa -->
     <link rel="stylesheet" href="css/estilos.css">
@@ -53,8 +69,11 @@
 
             <nav class="navegacion" aria-label="Secciones">
                 <a class="pestana" href="#mascotas" data-vista="mascotas">Adoptar</a>
+                <a class="pestana" href="#registro" data-vista="registro">Dar en adopción</a>
                 <a class="pestana" href="#solicitudes" data-vista="solicitudes" data-solo-fundacion hidden>Solicitudes</a>
-                <a class="pestana" href="#registro" data-vista="registro" data-solo-fundacion hidden>Registrar mascota</a>
+                <a class="pestana" href="#publicaciones" data-vista="publicaciones" data-solo-fundacion hidden>
+                    Publicaciones <span id="contador-revision" class="contador-nav" hidden></span>
+                </a>
                 <button id="btn-acceso" type="button" class="boton-acceso">Acceso fundación</button>
             </nav>
         </div>
@@ -201,13 +220,15 @@
 
             <div class="titulo-seccion">
                 <div>
-                    <h2 id="titulo-registro">Registrar mascota</h2>
-                    <p>
-                        La mascota aparece en el catálogo como disponible
-                        apenas se guarda.
+                    <h2 id="titulo-registro">Dar una mascota en adopción</h2>
+                    <p id="texto-registro">
+                        Cuéntanos sobre la mascota y sube sus fotos. La fundación
+                        revisa cada publicación antes de mostrarla en el catálogo.
                     </p>
                 </div>
             </div>
+
+            <div id="resultado-registro" class="panel resultado-exito" hidden></div>
 
             <form id="form-mascota" class="panel formulario" novalidate>
                 <div class="campos">
@@ -261,14 +282,63 @@
                     </label>
 
                     <label class="campo campo-ancho">
-                        <span>URL de la foto <small>(opcional)</small></span>
-                        <input name="foto_url" type="url" maxlength="500" placeholder="https://...">
+                        <span>Descripción</span>
+                        <textarea name="descripcion" rows="3" minlength="20" maxlength="600" required placeholder="Carácter, cómo llegó a ti, cuidados especiales, con quién convive bien..."></textarea>
                     </label>
 
-                    <label class="campo campo-ancho">
-                        <span>Descripción</span>
-                        <textarea name="descripcion" rows="3" maxlength="600" placeholder="Carácter, cuidados especiales, con quién convive bien..."></textarea>
-                    </label>
+                    <!-- Fotos -->
+                    <div class="campo campo-ancho">
+                        <span id="etiqueta-fotos">Fotos <small>(de 1 a 3, se reducen antes de enviarlas)</small></span>
+                        <label class="zona-fotos">
+                            <input id="input-fotos" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-describedby="etiqueta-fotos">
+                            <span aria-hidden="true">📷</span>
+                            <span>Elegir fotos</span>
+                        </label>
+                        <div id="vista-fotos" class="vista-fotos" aria-live="polite"></div>
+                    </div>
+
+                    <!-- Ubicación de la mascota -->
+                    <fieldset class="campo-ancho ubicacion" data-ubicacion>
+                        <legend>¿Dónde está la mascota?</legend>
+                        <div class="campos-ubicacion">
+                            <label class="campo">
+                                <span>País</span>
+                                <select name="pais" required></select>
+                            </label>
+                            <label class="campo">
+                                <span>Departamento / Estado</span>
+                                <select name="departamento" required></select>
+                                <input name="departamento" type="text" minlength="2" maxlength="80" required hidden disabled>
+                            </label>
+                            <label class="campo">
+                                <span>Municipio / Ciudad</span>
+                                <select name="ciudad" required></select>
+                                <input name="ciudad" type="text" minlength="2" maxlength="80" required hidden disabled>
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <!-- Contacto de quien entrega la mascota -->
+                    <fieldset id="grupo-contacto" class="campo-ancho ubicacion">
+                        <legend>Tus datos de contacto</legend>
+                        <p class="texto-secundario nota-fieldset">
+                            Solo los ve la fundación, para coordinar la entrega.
+                        </p>
+                        <div class="campos-ubicacion">
+                            <label class="campo">
+                                <span>Nombre completo</span>
+                                <input name="contacto_nombre" type="text" required minlength="3" maxlength="100" autocomplete="name">
+                            </label>
+                            <label class="campo">
+                                <span>Teléfono</span>
+                                <input name="contacto_telefono" type="tel" required pattern="\+?\d{7,14}" maxlength="15" autocomplete="tel" placeholder="3001234567">
+                            </label>
+                            <label class="campo">
+                                <span>Correo electrónico</span>
+                                <input name="contacto_correo" type="email" required maxlength="120" autocomplete="email">
+                            </label>
+                        </div>
+                    </fieldset>
 
                     <div class="campo campo-ancho casillas">
                         <label class="casilla">
@@ -286,9 +356,51 @@
 
                 <div class="acciones-formulario">
                     <button type="reset" class="boton boton-secundario">Limpiar</button>
-                    <button type="submit" class="boton">Registrar mascota</button>
+                    <button id="btn-registrar" type="submit" class="boton">Enviar para revisión</button>
                 </div>
             </form>
+        </section>
+
+
+        <!-- ========== VISTA 4: PUBLICACIONES DE LA COMUNIDAD ========== -->
+        <section id="vista-publicaciones" class="vista" aria-labelledby="titulo-publicaciones" hidden>
+
+            <div class="titulo-seccion">
+                <div>
+                    <h2 id="titulo-publicaciones">Publicaciones de la comunidad</h2>
+                    <p>
+                        Mascotas que otras personas quieren dar en adopción.
+                        Revisa los datos y las fotos antes de publicarlas en el catálogo.
+                    </p>
+                </div>
+
+                <button id="btn-actualizar-publicaciones" type="button" class="boton boton-secundario">
+                    Actualizar
+                </button>
+            </div>
+
+            <div class="grupo-chips" role="group" aria-label="Filtrar publicaciones">
+                <button type="button" class="chip-filtro activo" data-estado-publicacion="en_revision">
+                    En revisión <span class="contador" id="contador-pub-en_revision">0</span>
+                </button>
+                <button type="button" class="chip-filtro" data-estado-publicacion="publicadas">
+                    Publicadas <span class="contador" id="contador-pub-publicadas">0</span>
+                </button>
+                <button type="button" class="chip-filtro" data-estado-publicacion="no_publicada">
+                    No publicadas <span class="contador" id="contador-pub-no_publicada">0</span>
+                </button>
+            </div>
+
+            <div
+                id="mensaje-publicaciones"
+                class="mensaje"
+                role="status"
+                aria-live="polite"
+            ></div>
+
+            <div id="lista-publicaciones" class="lista-publicaciones">
+                <p class="vacio">Cargando publicaciones...</p>
+            </div>
         </section>
 
     </main>
@@ -325,10 +437,25 @@
                     <input name="correo" type="email" required maxlength="120" autocomplete="email">
                 </label>
 
-                <label class="campo">
-                    <span>Ciudad</span>
-                    <input name="ciudad" type="text" required minlength="3" maxlength="60" value="Cúcuta">
-                </label>
+                <fieldset class="campo-ancho ubicacion" data-ubicacion>
+                    <legend>¿Dónde vives?</legend>
+                    <div class="campos-ubicacion">
+                        <label class="campo">
+                            <span>País</span>
+                            <select name="pais" required></select>
+                        </label>
+                        <label class="campo">
+                            <span>Departamento / Estado</span>
+                            <select name="departamento" required></select>
+                            <input name="departamento" type="text" minlength="2" maxlength="80" required hidden disabled>
+                        </label>
+                        <label class="campo">
+                            <span>Municipio / Ciudad</span>
+                            <select name="ciudad" required></select>
+                            <input name="ciudad" type="text" minlength="2" maxlength="80" required hidden disabled>
+                        </label>
+                    </div>
+                </fieldset>
 
                 <label class="campo">
                     <span>Tipo de vivienda</span>
@@ -428,6 +555,74 @@
             </div>
         </form>
     </dialog>
+
+
+    <!-- ========== ACCESIBILIDAD ========== -->
+    <button
+        id="btn-accesibilidad"
+        type="button"
+        class="boton-accesibilidad"
+        aria-label="Opciones de accesibilidad"
+        aria-expanded="false"
+        aria-controls="panel-accesibilidad"
+        title="Opciones de accesibilidad"
+    >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="4" r="2.2"/>
+            <path d="M4 7.6c2.7.8 5.3 1.2 8 1.2s5.3-.4 8-1.2l.5 1.8c-2.2.7-4.4 1.1-6.6 1.3v3.4l2.6 7.5-1.8.6-2.7-7.3-2.7 7.3-1.8-.6 2.6-7.5v-3.4c-2.2-.2-4.4-.6-6.6-1.3z"/>
+        </svg>
+    </button>
+
+    <section
+        id="panel-accesibilidad"
+        class="panel-accesibilidad"
+        role="dialog"
+        aria-labelledby="titulo-accesibilidad"
+        hidden
+    >
+        <div class="dialogo-encabezado">
+            <h2 id="titulo-accesibilidad">Accesibilidad</h2>
+            <button id="btn-cerrar-accesibilidad" type="button" class="boton-cerrar" aria-label="Cerrar">×</button>
+        </div>
+
+        <div class="a11y-grupo">
+            <span class="a11y-titulo" id="a11y-etiqueta-tamano">Tamaño del texto</span>
+            <div class="a11y-tamano" role="group" aria-labelledby="a11y-etiqueta-tamano">
+                <button type="button" class="boton boton-secundario" data-escala="-1" aria-label="Reducir tamaño">A−</button>
+                <output id="a11y-valor-escala" aria-live="polite">100 %</output>
+                <button type="button" class="boton boton-secundario" data-escala="1" aria-label="Aumentar tamaño">A+</button>
+            </div>
+        </div>
+
+        <fieldset class="a11y-grupo">
+            <legend class="a11y-titulo">Colores</legend>
+            <div class="a11y-opciones">
+                <label class="a11y-opcion"><input type="radio" name="a11y-tema" value="claro"> Claro</label>
+                <label class="a11y-opcion"><input type="radio" name="a11y-tema" value="oscuro"> Oscuro</label>
+                <label class="a11y-opcion"><input type="radio" name="a11y-tema" value="contraste"> Alto contraste</label>
+            </div>
+        </fieldset>
+
+        <fieldset class="a11y-grupo">
+            <legend class="a11y-titulo">Tipo de letra</legend>
+            <div class="a11y-opciones">
+                <label class="a11y-opcion"><input type="radio" name="a11y-fuente" value="predeterminada"> Predeterminada</label>
+                <label class="a11y-opcion a11y-fuente-legible"><input type="radio" name="a11y-fuente" value="legible"> Alta legibilidad</label>
+                <label class="a11y-opcion a11y-fuente-lectura"><input type="radio" name="a11y-fuente" value="lectura"> Lectura fácil</label>
+            </div>
+        </fieldset>
+
+        <fieldset class="a11y-grupo">
+            <legend class="a11y-titulo">Ajustes</legend>
+            <label class="casilla"><input id="a11y-espaciado" type="checkbox"> Más espacio entre líneas y letras</label>
+            <label class="casilla"><input id="a11y-enlaces" type="checkbox"> Subrayar enlaces y resaltar el foco</label>
+            <label class="casilla"><input id="a11y-sin-animaciones" type="checkbox"> Quitar animaciones</label>
+        </fieldset>
+
+        <button id="btn-restablecer-accesibilidad" type="button" class="boton boton-secundario a11y-restablecer">
+            Restablecer
+        </button>
+    </section>
 
 
     <!-- Aviso flotante -->

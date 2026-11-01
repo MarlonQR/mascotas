@@ -30,19 +30,26 @@ const app = {
     filtroEspecie: "todas",
     filtroEstado: "todos",
     filtroSolicitudes: "todas",
+    publicaciones: [],
+    filtroPublicaciones: "en_revision",
     mascotaElegida: null,
     solicitudAbierta: null,
     accionPendiente: null,
-    claveAdmin: null
+    claveAdmin: null,
+    fotosNuevas: []
 };
 
-const VISTAS = ["mascotas", "solicitudes", "registro"];
+const VISTAS = ["mascotas", "registro", "solicitudes", "publicaciones"];
 
 const ESTADOS_MASCOTA = {
+    en_revision: "En revisión",
+    no_publicada: "No publicada",
     disponible: "Disponible",
     en_proceso: "En proceso",
     adoptada: "Adoptada"
 };
+
+const MAXIMO_FOTOS = 3;
 
 const ESTADOS_SOLICITUD = {
     pendiente: "Pendiente",
@@ -78,9 +85,12 @@ const CAMPOS = {
     documento: "documento",
     correo: "correo",
     telefono: "teléfono",
-    ciudad: "ciudad",
+    pais: "país",
+    departamento: "departamento o estado",
+    ciudad: "municipio o ciudad",
     motivo: "motivo",
-    observacion: "observación"
+    observacion: "observación",
+    fotos: "fotos"
 };
 
 
@@ -208,8 +218,29 @@ function crearEstado(clave, texto) {
     return crear("span", `estado estado-${clave}`, texto);
 }
 
+// URL de la foto principal: una externa (foto_url) o la primera subida,
+// que la API de Mascotas sirve en una ruta relativa.
+function urlFoto(mascota, indice = 0) {
+    if (!mascota) {
+        return null;
+    }
+
+    if (indice === 0 && mascota.foto_url) {
+        return mascota.foto_url;
+    }
+
+    const fotos = mascota.fotos || [];
+    return fotos[indice] ? `${API_MASCOTAS}${fotos[indice]}` : null;
+}
+
+function textoUbicacion(datos) {
+    return [datos.ciudad, datos.departamento, datos.pais]
+        .filter(Boolean)
+        .join(", ");
+}
+
 // Foto de la mascota. Si no tiene o no carga, muestra un emoji.
-function crearFoto(mascota, miniatura = false) {
+function crearFoto(mascota, miniatura = false, indice = 0) {
     const alterna = crear(
         "span",
         miniatura ? "miniatura" : "foto-alterna",
@@ -217,13 +248,15 @@ function crearFoto(mascota, miniatura = false) {
     );
     alterna.setAttribute("aria-hidden", "true");
 
-    if (!mascota || !mascota.foto_url) {
+    const url = urlFoto(mascota, indice);
+
+    if (!url) {
         return alterna;
     }
 
     const imagen = document.createElement("img");
 
-    imagen.src = mascota.foto_url;
+    imagen.src = url;
     imagen.alt = `Foto de ${mascota.nombre}`;
     imagen.loading = "lazy";
 
@@ -276,7 +309,172 @@ function filaUnica(tabla, columnas, texto) {
 
 
 // ==================================================
-// 4. CATÁLOGO DE MASCOTAS (API DE MASCOTAS)
+// 4. PAÍS, DEPARTAMENTO Y CIUDAD
+// ==================================================
+// Los datos están en web/data/ubicaciones: paises.json y un archivo por
+// país con sus departamentos o estados y las ciudades de cada uno. Si un
+// país no tiene esa información, los dos campos se escriben a mano.
+
+const PAIS_PREDETERMINADO = "CO";
+const cacheUbicaciones = {};
+
+function leerArchivoUbicaciones(archivo) {
+    if (!cacheUbicaciones[archivo]) {
+        cacheUbicaciones[archivo] = fetch(`data/ubicaciones/${archivo}.json`)
+            .then(respuesta => {
+                if (!respuesta.ok) {
+                    throw new Error(`No se pudo cargar ${archivo}.json`);
+                }
+
+                return respuesta.json();
+            })
+            .catch(error => {
+                delete cacheUbicaciones[archivo];
+                throw error;
+            });
+    }
+
+    return cacheUbicaciones[archivo];
+}
+
+function controlesUbicacion(grupo) {
+    return {
+        pais: grupo.querySelector('select[name="pais"]'),
+        departamentoLista: grupo.querySelector('select[name="departamento"]'),
+        departamentoTexto: grupo.querySelector('input[name="departamento"]'),
+        ciudadLista: grupo.querySelector('select[name="ciudad"]'),
+        ciudadTexto: grupo.querySelector('input[name="ciudad"]')
+    };
+}
+
+function llenarLista(select, nombres, textoInicial) {
+    select.replaceChildren(
+        new Option(textoInicial, ""),
+        ...nombres.map(nombre => new Option(nombre, nombre))
+    );
+}
+
+function usarTextoLibre(controles, libre) {
+    // Solo uno de cada par (lista o texto) queda activo y se envía.
+    [
+        [controles.departamentoLista, controles.departamentoTexto],
+        [controles.ciudadLista, controles.ciudadTexto]
+    ].forEach(([lista, texto]) => {
+        lista.hidden = libre;
+        lista.disabled = libre;
+        texto.hidden = !libre;
+        texto.disabled = !libre;
+        texto.value = "";
+    });
+}
+
+async function cambiarPais(grupo) {
+    const controles = controlesUbicacion(grupo);
+    const codigo = controles.pais.value;
+    const opcion = controles.pais.selectedOptions[0];
+
+    grupo.regiones = {};
+    llenarLista(controles.ciudadLista, [], "Primero elige el departamento");
+
+    if (!codigo) {
+        usarTextoLibre(controles, false);
+        llenarLista(controles.departamentoLista, [], "Primero elige el país");
+        return;
+    }
+
+    if (opcion.dataset.regiones !== "true") {
+        usarTextoLibre(controles, true);
+        return;
+    }
+
+    usarTextoLibre(controles, false);
+    llenarLista(controles.departamentoLista, [], "Cargando...");
+
+    try {
+        const regiones = await leerArchivoUbicaciones(codigo);
+
+        // Si la persona cambió de país mientras cargaba, se ignora esta respuesta.
+        if (controles.pais.value !== codigo) {
+            return;
+        }
+
+        grupo.regiones = regiones;
+        llenarLista(controles.departamentoLista, Object.keys(regiones), "Selecciona...");
+
+    } catch (error) {
+        console.error("Error al cargar las regiones:", error);
+        usarTextoLibre(controles, true);
+    }
+}
+
+function cambiarDepartamento(grupo) {
+    const controles = controlesUbicacion(grupo);
+    const departamento = controles.departamentoLista.value;
+    const ciudades = (grupo.regiones || {})[departamento] || [];
+
+    llenarLista(
+        controles.ciudadLista,
+        ciudades,
+        departamento ? "Selecciona..." : "Primero elige el departamento"
+    );
+}
+
+async function configurarUbicacion(grupo) {
+    const controles = controlesUbicacion(grupo);
+
+    controles.pais.addEventListener("change", () => cambiarPais(grupo));
+    controles.departamentoLista.addEventListener("change", () => cambiarDepartamento(grupo));
+
+    let paises;
+
+    try {
+        paises = await leerArchivoUbicaciones("paises");
+    } catch (error) {
+        console.error("Error al cargar los países:", error);
+        paises = [{ codigo: PAIS_PREDETERMINADO, nombre: "Colombia", regiones: false }];
+    }
+
+    controles.pais.replaceChildren(
+        new Option("Selecciona...", ""),
+        ...paises.map(pais => {
+            const opcion = new Option(pais.nombre, pais.codigo);
+            opcion.dataset.regiones = String(pais.regiones);
+            return opcion;
+        })
+    );
+
+    await restablecerUbicacion(grupo);
+}
+
+async function restablecerUbicacion(grupo) {
+    const controles = controlesUbicacion(grupo);
+
+    controles.pais.value = PAIS_PREDETERMINADO;
+    await cambiarPais(grupo);
+}
+
+function leerUbicacion(grupo) {
+    const controles = controlesUbicacion(grupo);
+    const opcion = controles.pais.selectedOptions[0];
+
+    const departamento = controles.departamentoTexto.disabled
+        ? controles.departamentoLista.value
+        : controles.departamentoTexto.value;
+
+    const ciudad = controles.ciudadTexto.disabled
+        ? controles.ciudadLista.value
+        : controles.ciudadTexto.value;
+
+    return {
+        pais: opcion && opcion.value ? opcion.textContent : "",
+        departamento: departamento.trim(),
+        ciudad: ciudad.trim()
+    };
+}
+
+
+// ==================================================
+// 5. CATÁLOGO DE MASCOTAS (API DE MASCOTAS)
 // ==================================================
 
 async function consultarMascotas() {
@@ -394,6 +592,12 @@ function crearTarjeta(mascota) {
 
     cuerpo.append(titulo, datos, etiquetas);
 
+    if (mascota.ciudad) {
+        cuerpo.append(
+            crear("p", "tarjeta-ubicacion", `📍 ${mascota.ciudad}, ${mascota.departamento}`)
+        );
+    }
+
     if (mascota.descripcion) {
         cuerpo.append(crear("p", "tarjeta-descripcion", mascota.descripcion));
     }
@@ -424,7 +628,7 @@ function crearTarjeta(mascota) {
 
 
 // ==================================================
-// 5. SOLICITUD DE ADOPCIÓN (API DE ADOPCIONES)
+// 6. SOLICITUD DE ADOPCIÓN (API DE ADOPCIONES)
 // ==================================================
 
 function abrirSolicitud(mascota) {
@@ -472,6 +676,12 @@ async function enviarSolicitud(evento) {
     }
 
     const datos = new FormData(formulario);
+    const ubicacion = leerUbicacion(formulario.querySelector("[data-ubicacion]"));
+
+    if (!ubicacion.pais || !ubicacion.departamento || !ubicacion.ciudad) {
+        error.textContent = "Elige tu país, departamento o estado y municipio o ciudad.";
+        return;
+    }
 
     const solicitud = {
         id_mascota: app.mascotaElegida.id_mascota,
@@ -479,7 +689,7 @@ async function enviarSolicitud(evento) {
         documento: datos.get("documento").trim(),
         correo: datos.get("correo").trim(),
         telefono: datos.get("telefono").trim(),
-        ciudad: datos.get("ciudad").trim(),
+        ...ubicacion,
         tipo_vivienda: datos.get("tipo_vivienda"),
         otras_mascotas: datos.has("otras_mascotas"),
         motivo: datos.get("motivo").trim()
@@ -498,6 +708,7 @@ async function enviarSolicitud(evento) {
 
         mostrarResultadoSolicitud(respuesta);
         formulario.reset();
+        restablecerUbicacion(formulario.querySelector("[data-ubicacion]"));
         consultarMascotas();
 
     } catch (excepcion) {
@@ -533,7 +744,7 @@ function mostrarResultadoSolicitud(respuesta) {
 
 
 // ==================================================
-// 6. GESTIÓN DE SOLICITUDES (PANEL DE LA FUNDACIÓN)
+// 7. GESTIÓN DE SOLICITUDES (PANEL DE LA FUNDACIÓN)
 // ==================================================
 
 async function consultarSolicitudes() {
@@ -744,7 +955,7 @@ function mostrarDetalleSolicitud(solicitud) {
         ["Documento", solicitud.documento],
         ["Teléfono", solicitud.telefono],
         ["Correo", solicitud.correo],
-        ["Ciudad", solicitud.ciudad],
+        ["Ubicación", textoUbicacion(solicitud)],
         [
             "Vivienda",
             `${VIVIENDAS[solicitud.tipo_vivienda]}, ` +
@@ -919,20 +1130,146 @@ async function decidirSolicitud(accion) {
 
 
 // ==================================================
-// 7. REGISTRO DE MASCOTAS (API DE MASCOTAS)
+// 8. DAR EN ADOPCIÓN (API DE MASCOTAS)
 // ==================================================
+// Cualquier persona envía la mascota y queda en revisión. Si la
+// fundación tiene la sesión abierta, la mascota se publica de inmediato.
+
+// Las fotos se reducen en el navegador antes de enviarlas.
+const LADO_MAXIMO_FOTO = 1200;
+
+function reducirFoto(archivo) {
+    return new Promise((resolver, rechazar) => {
+        const url = URL.createObjectURL(archivo);
+        const imagen = new Image();
+
+        imagen.onload = () => {
+            const escala = Math.min(
+                1,
+                LADO_MAXIMO_FOTO / Math.max(imagen.naturalWidth, imagen.naturalHeight)
+            );
+            const lienzo = document.createElement("canvas");
+            const contexto = lienzo.getContext("2d");
+
+            lienzo.width = Math.round(imagen.naturalWidth * escala);
+            lienzo.height = Math.round(imagen.naturalHeight * escala);
+
+            // Fondo blanco para las imágenes PNG con transparencia
+            contexto.fillStyle = "#ffffff";
+            contexto.fillRect(0, 0, lienzo.width, lienzo.height);
+            contexto.drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+
+            URL.revokeObjectURL(url);
+            resolver(lienzo.toDataURL("image/jpeg", 0.82));
+        };
+
+        imagen.onerror = () => {
+            URL.revokeObjectURL(url);
+            rechazar(new Error(`No se pudo leer la imagen "${archivo.name}".`));
+        };
+
+        imagen.src = url;
+    });
+}
+
+async function agregarFotos(evento) {
+    const entrada = evento.currentTarget;
+    const archivos = [...entrada.files];
+    const espacio = MAXIMO_FOTOS - app.fotosNuevas.length;
+    const error = document.getElementById("error-mascota");
+
+    error.textContent = "";
+
+    if (archivos.length > espacio) {
+        error.textContent = `Puedes subir máximo ${MAXIMO_FOTOS} fotos.`;
+    }
+
+    for (const archivo of archivos.slice(0, Math.max(espacio, 0))) {
+        try {
+            app.fotosNuevas.push(await reducirFoto(archivo));
+        } catch (excepcion) {
+            error.textContent = excepcion.message;
+        }
+    }
+
+    entrada.value = "";
+    mostrarFotosPrevias();
+}
+
+function mostrarFotosPrevias() {
+    const vista = document.getElementById("vista-fotos");
+
+    vista.replaceChildren(...app.fotosNuevas.map((foto, indice) => {
+        const contenedor = crear("div", "foto-previa");
+        const imagen = document.createElement("img");
+        const quitar = crear("button", "", "×");
+
+        imagen.src = foto;
+        imagen.alt = `Foto ${indice + 1}`;
+        quitar.type = "button";
+        quitar.setAttribute("aria-label", `Quitar la foto ${indice + 1}`);
+        quitar.addEventListener("click", () => {
+            app.fotosNuevas.splice(indice, 1);
+            mostrarFotosPrevias();
+        });
+
+        contenedor.append(imagen, quitar);
+        return contenedor;
+    }));
+}
+
+function actualizarModoRegistro() {
+    const fundacion = Boolean(app.claveAdmin);
+    const contacto = document.getElementById("grupo-contacto");
+
+    // Un fieldset deshabilitado no se valida ni se envía.
+    contacto.hidden = fundacion;
+    contacto.disabled = fundacion;
+
+    document.getElementById("texto-registro").textContent = fundacion
+        ? "Entraste como fundación: la mascota se publica en el catálogo apenas la guardes."
+        : "Cuéntanos sobre la mascota y sube sus fotos. La fundación revisa cada publicación antes de mostrarla en el catálogo.";
+
+    document.getElementById("btn-registrar").textContent = fundacion
+        ? "Publicar mascota"
+        : "Enviar para revisión";
+}
+
+function limpiarRegistro() {
+    app.fotosNuevas = [];
+    mostrarFotosPrevias();
+    document.getElementById("error-mascota").textContent = "";
+
+    // El evento reset ocurre antes de que el formulario se limpie
+    setTimeout(() => {
+        restablecerUbicacion(document.querySelector("#form-mascota [data-ubicacion]"));
+    }, 0);
+}
 
 async function registrarMascota(evento) {
     evento.preventDefault();
 
     const formulario = evento.currentTarget;
     const error = document.getElementById("error-mascota");
-    const boton = formulario.querySelector('button[type="submit"]');
+    const boton = document.getElementById("btn-registrar");
+    const fundacion = Boolean(app.claveAdmin);
 
     error.textContent = "";
 
     if (!formulario.checkValidity()) {
         formulario.reportValidity();
+        return;
+    }
+
+    const ubicacion = leerUbicacion(formulario.querySelector("[data-ubicacion]"));
+
+    if (!ubicacion.pais || !ubicacion.departamento || !ubicacion.ciudad) {
+        error.textContent = "Elige el país, el departamento o estado y el municipio o ciudad.";
+        return;
+    }
+
+    if (!fundacion && app.fotosNuevas.length === 0) {
+        error.textContent = "Sube al menos una foto de la mascota.";
         return;
     }
 
@@ -947,27 +1284,41 @@ async function registrarMascota(evento) {
         tamano: datos.get("tamano"),
         vacunado: datos.has("vacunado"),
         esterilizado: datos.has("esterilizado"),
-        descripcion: datos.get("descripcion").trim() || null,
-        foto_url: datos.get("foto_url").trim() || null
+        descripcion: datos.get("descripcion").trim(),
+        ...ubicacion,
+        fotos: app.fotosNuevas
     };
 
+    if (!fundacion) {
+        mascota.contacto = {
+            nombre: datos.get("contacto_nombre").trim(),
+            telefono: datos.get("contacto_telefono").trim(),
+            correo: datos.get("contacto_correo").trim()
+        };
+    }
+
+    const textoBoton = boton.textContent;
     boton.disabled = true;
-    boton.textContent = "Registrando...";
+    boton.textContent = "Enviando...";
 
     try {
         const nueva = await pedirJSON(`${API_MASCOTAS}/mascotas`, {
             method: "POST",
             body: mascota,
-            admin: true
+            admin: fundacion
         });
 
         formulario.reset();
-        mostrarAviso(
-            `${nueva.nombre} quedó registrad${terminacion(nueva)} con el número #${nueva.id_mascota}.`
-        );
 
-        await consultarMascotas();
-        location.hash = "#mascotas";
+        if (nueva.estado === "en_revision") {
+            mostrarResultadoRegistro(nueva);
+        } else {
+            mostrarAviso(
+                `${nueva.nombre} quedó publicad${terminacion(nueva)} en el catálogo.`
+            );
+            await consultarMascotas();
+            location.hash = "#mascotas";
+        }
 
     } catch (excepcion) {
         console.error("Error al registrar la mascota:", excepcion);
@@ -975,13 +1326,285 @@ async function registrarMascota(evento) {
 
     } finally {
         boton.disabled = false;
-        boton.textContent = "Registrar mascota";
+        boton.textContent = textoBoton;
     }
+}
+
+function mostrarResultadoRegistro(mascota) {
+    const resultado = document.getElementById("resultado-registro");
+    const formulario = document.getElementById("form-mascota");
+    const boton = crear("button", "boton", "Dar otra mascota en adopción");
+
+    boton.type = "button";
+    boton.addEventListener("click", () => {
+        resultado.hidden = true;
+        formulario.hidden = false;
+        formulario.elements.nombre.focus();
+    });
+
+    resultado.replaceChildren(
+        crear("div", "icono", "🐾"),
+        crear("h3", "", "¡Gracias! Recibimos la publicación"),
+        crear(
+            "p",
+            "",
+            `La fundación revisará los datos y las fotos de ${mascota.nombre}. ` +
+            "Si todo está bien, aparecerá en el catálogo y te contactaremos para coordinar la entrega."
+        ),
+        boton
+    );
+
+    formulario.hidden = true;
+    resultado.hidden = false;
+    resultado.scrollIntoView({ block: "center" });
 }
 
 
 // ==================================================
-// 8. ESTADO DE LOS SERVICIOS
+// 9. PUBLICACIONES DE LA COMUNIDAD (PANEL DE LA FUNDACIÓN)
+// ==================================================
+
+function grupoPublicacion(mascota) {
+    if (mascota.estado === "en_revision" || mascota.estado === "no_publicada") {
+        return mascota.estado;
+    }
+
+    return "publicadas";
+}
+
+async function consultarPublicaciones() {
+    const lista = document.getElementById("lista-publicaciones");
+    const boton = document.getElementById("btn-actualizar-publicaciones");
+
+    boton.disabled = true;
+
+    try {
+        const publicaciones = await pedirJSON(
+            `${API_MASCOTAS}/publicaciones?estado=todas`,
+            { admin: true }
+        );
+
+        app.publicaciones = publicaciones;
+
+        mostrarMensaje("mensaje-publicaciones", "");
+        actualizarContadoresPublicaciones();
+        mostrarPublicaciones();
+
+    } catch (error) {
+        console.error("Error al consultar publicaciones:", error);
+
+        mostrarMensaje(
+            "mensaje-publicaciones",
+            `No fue posible consultar las publicaciones. ${error.message}`,
+            "error"
+        );
+        lista.replaceChildren(crear("p", "vacio", "No se pudieron cargar las publicaciones."));
+
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+function actualizarContadoresPublicaciones() {
+    const contar = grupo =>
+        app.publicaciones.filter(mascota => grupoPublicacion(mascota) === grupo).length;
+
+    ["en_revision", "publicadas", "no_publicada"].forEach(grupo => {
+        document.getElementById(`contador-pub-${grupo}`).textContent = contar(grupo);
+    });
+
+    // Aviso en la pestaña cuando hay publicaciones esperando revisión
+    const pendientes = contar("en_revision");
+    const insignia = document.getElementById("contador-revision");
+
+    insignia.textContent = pendientes;
+    insignia.hidden = pendientes === 0;
+    insignia.setAttribute("aria-label", `${pendientes} por revisar`);
+}
+
+function mostrarPublicaciones() {
+    const lista = document.getElementById("lista-publicaciones");
+
+    const visibles = app.publicaciones.filter(
+        mascota => grupoPublicacion(mascota) === app.filtroPublicaciones
+    );
+
+    if (visibles.length === 0) {
+        const textos = {
+            en_revision: "No hay publicaciones esperando revisión.",
+            publicadas: "Todavía no se ha publicado ninguna mascota de la comunidad.",
+            no_publicada: "No hay publicaciones rechazadas."
+        };
+
+        lista.replaceChildren(crear("p", "vacio", textos[app.filtroPublicaciones]));
+        return;
+    }
+
+    lista.replaceChildren(...visibles.map(crearPublicacion));
+}
+
+function crearPublicacion(mascota) {
+    const o = terminacion(mascota);
+    const tarjeta = crear("article", "panel publicacion");
+
+    // Galería de fotos: cada una abre en tamaño completo
+    const galeria = crear("div", "galeria");
+    const cantidad = Math.max(mascota.fotos.length, mascota.foto_url ? 1 : 0);
+
+    if (cantidad === 0) {
+        galeria.append(crearFoto(mascota));
+    }
+
+    for (let indice = 0; indice < cantidad; indice++) {
+        const enlace = document.createElement("a");
+
+        enlace.href = urlFoto(mascota, indice);
+        enlace.target = "_blank";
+        enlace.rel = "noopener noreferrer";
+        enlace.setAttribute("aria-label", `Ver la foto ${indice + 1} de ${mascota.nombre} en tamaño completo`);
+        enlace.append(crearFoto(mascota, false, indice));
+        galeria.append(enlace);
+    }
+
+    // Datos de la mascota
+    const cuerpo = crear("div", "publicacion-cuerpo");
+    const encabezado = crear("div", "publicacion-encabezado");
+
+    encabezado.append(
+        crear("h3", "", mascota.nombre),
+        crearEstado(mascota.estado, etiquetaEstadoMascota(mascota))
+    );
+
+    const etiquetas = crear("ul", "etiquetas");
+
+    etiquetas.append(
+        crear("li", mascota.vacunado ? "" : "pendiente", mascota.vacunado ? `Vacunad${o}` : "Vacunas pendientes"),
+        crear("li", mascota.esterilizado ? "" : "pendiente", mascota.esterilizado ? `Esterilizad${o}` : "Sin esterilizar")
+    );
+
+    cuerpo.append(
+        encabezado,
+        crear(
+            "p",
+            "tarjeta-datos",
+            [
+                mascota.especie === "perro" ? "Perro" : "Gato",
+                mascota.sexo === "hembra" ? "Hembra" : "Macho",
+                mascota.raza,
+                formatearEdad(mascota.edad_meses),
+                TAMANOS[mascota.tamano]
+            ].join(" · ")
+        ),
+        etiquetas,
+        crear("p", "", mascota.descripcion || "Sin descripción"),
+        crear("p", "tarjeta-ubicacion", `📍 ${textoUbicacion(mascota) || "Sin ubicación"}`),
+        crear("p", "texto-secundario", `Enviada el ${formatearFecha(mascota.fecha_actualizacion, true)}`)
+    );
+
+    // Contacto de quien entrega la mascota
+    if (mascota.contacto) {
+        const contacto = crear("div", "cita");
+        const telefono = crear("a", "", mascota.contacto.telefono);
+        const correo = crear("a", "", mascota.contacto.correo);
+
+        telefono.href = `tel:${mascota.contacto.telefono}`;
+        correo.href = `mailto:${mascota.contacto.correo}`;
+
+        contacto.append(
+            crear("strong", "", "Contacto de quien la entrega"),
+            document.createTextNode(`${mascota.contacto.nombre} · `),
+            telefono,
+            document.createTextNode(" · "),
+            correo
+        );
+        cuerpo.append(contacto);
+    }
+
+    if (mascota.estado === "en_revision") {
+        cuerpo.append(crearDecisionPublicacion(mascota));
+    } else if (mascota.observacion_revision) {
+        const observacion = crear("div", "cita");
+
+        observacion.append(
+            crear("strong", "", "Observación de la fundación"),
+            document.createTextNode(mascota.observacion_revision)
+        );
+        cuerpo.append(observacion);
+    }
+
+    tarjeta.append(galeria, cuerpo);
+    return tarjeta;
+}
+
+function crearDecisionPublicacion(mascota) {
+    const bloque = crear("div", "decision-publicacion");
+    const etiqueta = crear("label", "campo");
+    const campo = document.createElement("textarea");
+    const error = crear("p", "error-formulario");
+    const acciones = crear("div", "acciones-formulario");
+    const rechazar = crear("button", "boton boton-peligro", "No publicar");
+    const publicar = crear("button", "boton boton-exito", "Publicar en el catálogo");
+
+    campo.rows = 2;
+    campo.maxLength = 500;
+    campo.placeholder = "Obligatoria si no se publica. Ej.: las fotos no permiten ver bien a la mascota.";
+    error.setAttribute("role", "alert");
+    etiqueta.append(crear("span", "", "Observación"), campo);
+
+    rechazar.type = "button";
+    publicar.type = "button";
+
+    const decidir = async accion => {
+        const observacion = campo.value.trim();
+        error.textContent = "";
+
+        if (accion === "rechazar-publicacion" && observacion.length < 5) {
+            error.textContent = "Escribe por qué no se publica (mínimo 5 caracteres).";
+            campo.focus();
+            return;
+        }
+
+        rechazar.disabled = true;
+        publicar.disabled = true;
+
+        try {
+            await pedirJSON(
+                `${API_MASCOTAS}/mascotas/${mascota.id_mascota}/${accion}`,
+                {
+                    method: "PATCH",
+                    body: { observacion: observacion || null },
+                    admin: true
+                }
+            );
+
+            mostrarAviso(
+                accion === "publicar"
+                    ? `${mascota.nombre} ya aparece en el catálogo.`
+                    : `La publicación de ${mascota.nombre} no se aprobó.`
+            );
+
+            await Promise.all([consultarPublicaciones(), consultarMascotas()]);
+
+        } catch (excepcion) {
+            console.error("Error al revisar la publicación:", excepcion);
+            error.textContent = excepcion.message;
+            rechazar.disabled = false;
+            publicar.disabled = false;
+        }
+    };
+
+    rechazar.addEventListener("click", () => decidir("rechazar-publicacion"));
+    publicar.addEventListener("click", () => decidir("publicar"));
+
+    acciones.append(rechazar, publicar);
+    bloque.append(etiqueta, error, acciones);
+
+    return bloque;
+}
+
+
+// ==================================================
+// 10. ESTADO DE LOS SERVICIOS
 // ==================================================
 
 async function verificarServicio(id, url) {
@@ -1005,7 +1628,7 @@ async function verificarServicio(id, url) {
 
 
 // ==================================================
-// 9. ACCESO DE LA FUNDACIÓN
+// 11. ACCESO DE LA FUNDACIÓN
 // ==================================================
 
 // La clave se guarda solo mientras la pestaña del navegador esté abierta.
@@ -1029,6 +1652,8 @@ function actualizarAccesoFundacion() {
     const boton = document.getElementById("btn-acceso");
     boton.textContent = dentro ? "Salir" : "Acceso fundación";
     boton.title = dentro ? "Cerrar el acceso de la fundación" : "";
+
+    actualizarModoRegistro();
 }
 
 function abrirAcceso() {
@@ -1081,6 +1706,9 @@ async function ingresarFundacion(evento) {
         mostrarAviso("Entraste como fundación.");
         location.hash = "#solicitudes";
 
+        // Para mostrar en la pestaña cuántas publicaciones esperan revisión
+        consultarPublicaciones();
+
     } catch (excepcion) {
         error.textContent = excepcion.message;
 
@@ -1114,10 +1742,155 @@ function cerrarSesionFundacion() {
 
 
 // ==================================================
-// 10. NAVEGACIÓN E INICIO DE LA APLICACIÓN
+// 12. ACCESIBILIDAD
+// ==================================================
+// Las preferencias se guardan en este navegador. Un script en el <head>
+// de index.html las aplica antes de pintar la página.
+
+const ESCALAS = [0.9, 1, 1.15, 1.3, 1.5];
+
+const PREFERENCIAS_INICIALES = {
+    escala: 1,
+    tema: "claro",
+    fuente: "predeterminada",
+    espaciado: false,
+    enlaces: false,
+    sinAnimaciones: false
+};
+
+function leerPreferencias() {
+    try {
+        return {
+            ...PREFERENCIAS_INICIALES,
+            ...JSON.parse(localStorage.getItem("accesibilidad") || "{}")
+        };
+    } catch (error) {
+        return { ...PREFERENCIAS_INICIALES };
+    }
+}
+
+function aplicarPreferencias(preferencias) {
+    const raiz = document.documentElement;
+
+    raiz.dataset.tema = preferencias.tema;
+    raiz.dataset.fuente = preferencias.fuente;
+    raiz.style.setProperty("--escala", preferencias.escala);
+    raiz.classList.toggle("a11y-espaciado", preferencias.espaciado);
+    raiz.classList.toggle("a11y-enlaces", preferencias.enlaces);
+    raiz.classList.toggle("a11y-sin-animaciones", preferencias.sinAnimaciones);
+
+    // Reflejar las preferencias en el panel
+    document.getElementById("a11y-valor-escala").textContent =
+        `${Math.round(preferencias.escala * 100)} %`;
+    document.querySelector('[data-escala="-1"]').disabled = preferencias.escala <= ESCALAS[0];
+    document.querySelector('[data-escala="1"]').disabled =
+        preferencias.escala >= ESCALAS[ESCALAS.length - 1];
+
+    document.querySelectorAll('input[name="a11y-tema"]').forEach(opcion => {
+        opcion.checked = opcion.value === preferencias.tema;
+    });
+    document.querySelectorAll('input[name="a11y-fuente"]').forEach(opcion => {
+        opcion.checked = opcion.value === preferencias.fuente;
+    });
+
+    document.getElementById("a11y-espaciado").checked = preferencias.espaciado;
+    document.getElementById("a11y-enlaces").checked = preferencias.enlaces;
+    document.getElementById("a11y-sin-animaciones").checked = preferencias.sinAnimaciones;
+}
+
+function cambiarPreferencias(cambios) {
+    app.accesibilidad = { ...app.accesibilidad, ...cambios };
+    aplicarPreferencias(app.accesibilidad);
+
+    try {
+        localStorage.setItem("accesibilidad", JSON.stringify(app.accesibilidad));
+    } catch (error) {
+        // Sin almacenamiento, las preferencias duran hasta recargar la página.
+    }
+}
+
+function cambiarEscala(paso) {
+    const actual = ESCALAS.indexOf(app.accesibilidad.escala);
+    const indice = Math.min(
+        ESCALAS.length - 1,
+        Math.max(0, (actual === -1 ? 1 : actual) + paso)
+    );
+
+    cambiarPreferencias({ escala: ESCALAS[indice] });
+}
+
+function alternarPanelAccesibilidad(abrir) {
+    const panel = document.getElementById("panel-accesibilidad");
+    const boton = document.getElementById("btn-accesibilidad");
+
+    panel.hidden = !abrir;
+    boton.setAttribute("aria-expanded", String(abrir));
+
+    if (abrir) {
+        panel.querySelector("button, input").focus();
+    }
+}
+
+function configurarAccesibilidad() {
+    const panel = document.getElementById("panel-accesibilidad");
+    const boton = document.getElementById("btn-accesibilidad");
+
+    app.accesibilidad = leerPreferencias();
+    aplicarPreferencias(app.accesibilidad);
+
+    boton.addEventListener("click", () => alternarPanelAccesibilidad(panel.hidden));
+    document.getElementById("btn-cerrar-accesibilidad").addEventListener("click", () => {
+        alternarPanelAccesibilidad(false);
+        boton.focus();
+    });
+
+    document.querySelectorAll("[data-escala]").forEach(control => {
+        control.addEventListener("click", () => cambiarEscala(Number(control.dataset.escala)));
+    });
+
+    document.querySelectorAll('input[name="a11y-tema"]').forEach(opcion => {
+        opcion.addEventListener("change", () => cambiarPreferencias({ tema: opcion.value }));
+    });
+
+    document.querySelectorAll('input[name="a11y-fuente"]').forEach(opcion => {
+        opcion.addEventListener("change", () => cambiarPreferencias({ fuente: opcion.value }));
+    });
+
+    document.getElementById("a11y-espaciado").addEventListener("change", evento => {
+        cambiarPreferencias({ espaciado: evento.target.checked });
+    });
+    document.getElementById("a11y-enlaces").addEventListener("change", evento => {
+        cambiarPreferencias({ enlaces: evento.target.checked });
+    });
+    document.getElementById("a11y-sin-animaciones").addEventListener("change", evento => {
+        cambiarPreferencias({ sinAnimaciones: evento.target.checked });
+    });
+
+    document.getElementById("btn-restablecer-accesibilidad").addEventListener("click", () => {
+        cambiarPreferencias({ ...PREFERENCIAS_INICIALES });
+    });
+
+    // Cerrar con Escape o con un clic fuera del panel
+    document.addEventListener("keydown", evento => {
+        if (evento.key === "Escape" && !panel.hidden) {
+            alternarPanelAccesibilidad(false);
+            boton.focus();
+        }
+    });
+
+    document.addEventListener("click", evento => {
+        if (!panel.hidden && !panel.contains(evento.target) && !boton.contains(evento.target)) {
+            alternarPanelAccesibilidad(false);
+        }
+    });
+}
+
+
+// ==================================================
+// 13. NAVEGACIÓN E INICIO DE LA APLICACIÓN
 // ==================================================
 
-const VISTAS_FUNDACION = ["solicitudes", "registro"];
+const VISTAS_FUNDACION = ["solicitudes", "publicaciones"];
 
 function mostrarVista() {
     const pedida = location.hash.slice(1);
@@ -1145,6 +1918,10 @@ function mostrarVista() {
 
     if (vista === "solicitudes") {
         consultarSolicitudes();
+    }
+
+    if (vista === "publicaciones") {
+        consultarPublicaciones();
     }
 }
 
@@ -1182,9 +1959,25 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("form-mascota")
         .addEventListener("submit", registrarMascota);
     document.getElementById("form-mascota")
-        .addEventListener("reset", () => {
-            document.getElementById("error-mascota").textContent = "";
+        .addEventListener("reset", limpiarRegistro);
+    document.getElementById("input-fotos")
+        .addEventListener("change", agregarFotos);
+
+    // Listas encadenadas de país, departamento y ciudad
+    document.querySelectorAll("[data-ubicacion]").forEach(configurarUbicacion);
+
+    // Publicaciones de la comunidad
+    document.getElementById("btn-actualizar-publicaciones")
+        .addEventListener("click", consultarPublicaciones);
+    document.querySelectorAll("[data-estado-publicacion]").forEach(boton => {
+        boton.addEventListener("click", () => {
+            app.filtroPublicaciones = boton.dataset.estadoPublicacion;
+            marcarActivo("[data-estado-publicacion]", boton);
+            mostrarPublicaciones();
         });
+    });
+
+    configurarAccesibilidad();
     document.getElementById("btn-aprobar")
         .addEventListener("click", () => pedirConfirmacion("aprobar"));
     document.getElementById("btn-rechazar")
@@ -1227,6 +2020,10 @@ document.addEventListener("DOMContentLoaded", () => {
     app.claveAdmin = leerClaveGuardada();
     actualizarAccesoFundacion();
     mostrarVista();
+
+    if (app.claveAdmin && location.hash !== "#publicaciones") {
+        consultarPublicaciones();
+    }
     consultarMascotas();
     verificarServicio("estado-api-mascotas", API_MASCOTAS);
     verificarServicio("estado-api-adopciones", API_ADOPCIONES);

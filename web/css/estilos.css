@@ -25,6 +25,20 @@
     --color-error-hover: #991b1b;
     --sombra: 0 1px 2px #0000000d, 0 4px 14px #0000000f;
     --radio: 14px;
+    --color-texto-medio: #57534e;
+    --color-invertido: #ffffff;
+    --color-suave: #f5f5f4;
+    --color-suave-2: #e7e5e4;
+    --color-borde-fuerte: #d6d3d1;
+    --color-tabla: #faf8f5;
+    --color-acento-fondo: #fff7ed;
+    --color-acento-borde: #fed7aa;
+    --color-acento-medio: #fdba74;
+    --color-cifra: #ffffffcc;
+    --color-foto-fondo: #f5ebe0;
+    --color-etiqueta: #f0fdf4;
+    --color-peligro-suave: #fef2f2;
+    --escala: 1;
 }
 
 body {
@@ -211,9 +225,9 @@ main {
     margin-bottom: 22px;
     border-radius: 20px;
     background:
-        radial-gradient(circle at 90% 10%, #fed7aa 0, transparent 45%),
-        linear-gradient(135deg, #fff7ed, #ffedd5);
-    border: 1px solid #fed7aa;
+        radial-gradient(circle at 90% 10%, var(--color-acento-borde) 0, transparent 45%),
+        linear-gradient(135deg, var(--color-acento-fondo), var(--color-principal-suave));
+    border: 1px solid var(--color-acento-borde);
 }
 
 .antetitulo {
@@ -234,7 +248,7 @@ main {
 .presentacion-texto p:last-child {
     margin: 0;
     max-width: 560px;
-    color: #57534e;
+    color: var(--color-texto-medio);
 }
 
 .cifras {
@@ -247,7 +261,7 @@ main {
     min-width: 98px;
     padding: 12px 14px;
     border-radius: 12px;
-    background: #ffffffcc;
+    background: var(--color-cifra);
     text-align: center;
 }
 
@@ -307,14 +321,14 @@ main {
 .chip-filtro.activo {
     background: var(--color-texto);
     border-color: var(--color-texto);
-    color: #ffffff;
+    color: var(--color-invertido);
 }
 
 .contador {
     min-width: 22px;
     padding: 0 6px;
     border-radius: 999px;
-    background: #f5f5f4;
+    background: var(--color-suave);
     color: var(--color-texto);
     font-size: 12px;
     text-align: center;
@@ -322,7 +336,7 @@ main {
 
 .chip-filtro.activo .contador {
     background: #ffffff33;
-    color: #ffffff;
+    color: var(--color-invertido);
 }
 
 .filtros-derecha {
@@ -337,7 +351,7 @@ textarea {
     padding: 9px 11px;
     border: 1px solid var(--color-borde);
     border-radius: 10px;
-    background: #ffffff;
+    background: var(--color-panel);
     color: var(--color-texto);
     font: inherit;
     font-size: 15px;
@@ -350,7 +364,7 @@ textarea {
 select:focus,
 input:focus,
 textarea:focus {
-    outline: 2px solid #fdba74;
+    outline: 2px solid var(--color-acento-medio);
     border-color: var(--color-principal);
 }
 
@@ -391,7 +405,7 @@ textarea:focus {
     position: relative;
     aspect-ratio: 4 / 3;
     overflow: hidden;
-    background: #f5ebe0;
+    background: var(--color-foto-fondo);
 }
 
 .tarjeta-foto img,
@@ -473,14 +487,14 @@ textarea:focus {
 .etiquetas li {
     padding: 2px 9px;
     border-radius: 999px;
-    background: #f0fdf4;
+    background: var(--color-etiqueta);
     color: var(--color-exito);
     font-size: 12px;
     font-weight: 700;
 }
 
 .etiquetas li.pendiente {
-    background: #f5f5f4;
+    background: var(--color-suave);
     color: var(--color-texto-suave);
 }
 
@@ -545,6 +559,16 @@ textarea:focus {
     color: #991b1b;
 }
 
+.estado-en_revision {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.estado-no_publicada {
+    background: #e7e5e4;
+    color: #44403c;
+}
+
 /* 8. Botones */
 
 .boton {
@@ -575,8 +599,8 @@ textarea:focus {
 }
 
 .boton-secundario:hover {
-    background: #f5f5f4;
-    border-color: #d6d3d1;
+    background: var(--color-suave);
+    border-color: var(--color-borde-fuerte);
 }
 
 .boton-exito {
@@ -594,7 +618,7 @@ textarea:focus {
 }
 
 .boton-peligro:hover {
-    background: #fef2f2;
+    background: var(--color-peligro-suave);
     border-color: var(--color-error);
 }
 
@@ -604,8 +628,8 @@ textarea:focus {
 }
 
 .boton:disabled {
-    background: #e7e5e4;
-    border-color: #e7e5e4;
+    background: var(--color-suave-2);
+    border-color: var(--color-suave-2);
     color: #a8a29e;
     cursor: not-allowed;
 }
@@ -620,7 +644,7 @@ textarea:focus {
     height: 36px;
     border: none;
     border-radius: 50%;
-    background: #f5f5f4;
+    background: var(--color-suave);
     color: var(--color-texto);
     font-size: 22px;
     line-height: 1;
@@ -628,7 +652,7 @@ textarea:focus {
 }
 
 .boton-cerrar:hover {
-    background: #e7e5e4;
+    background: var(--color-suave-2);
 }
 
 button:focus-visible,
@@ -712,7 +736,7 @@ td {
 }
 
 th {
-    background: #faf8f5;
+    background: var(--color-tabla);
     font-size: 13px;
     font-weight: 800;
     color: var(--color-texto-suave);
@@ -723,7 +747,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover {
-    background: #fdfaf6;
+    background: var(--color-tabla);
 }
 
 .celda-mascota {
@@ -738,7 +762,7 @@ tbody tr:hover {
     height: 40px;
     border-radius: 10px;
     object-fit: cover;
-    background: #f5ebe0;
+    background: var(--color-foto-fondo);
     flex-shrink: 0;
     display: grid;
     place-items: center;
@@ -926,9 +950,9 @@ textarea:user-invalid {
 .cita {
     margin: 0 0 14px;
     padding: 12px 14px;
-    border-left: 4px solid #fdba74;
+    border-left: 4px solid var(--color-acento-medio);
     border-radius: 0 10px 10px 0;
-    background: #fff7ed;
+    background: var(--color-acento-fondo);
 }
 
 .cita strong {
@@ -943,7 +967,7 @@ textarea:user-invalid {
 }
 
 .decision textarea:disabled {
-    background: #f5f5f4;
+    background: var(--color-suave);
     color: var(--color-texto-suave);
 }
 
@@ -953,9 +977,9 @@ textarea:user-invalid {
     gap: 4px 14px;
     margin-top: 14px;
     padding: 16px;
-    border: 1px solid #fed7aa;
+    border: 1px solid var(--color-acento-borde);
     border-radius: 14px;
-    background: #fff7ed;
+    background: var(--color-acento-fondo);
 }
 
 .confirmacion-icono {
@@ -972,7 +996,7 @@ textarea:user-invalid {
 .confirmacion-lista {
     margin: 0;
     padding-left: 18px;
-    color: #57534e;
+    color: var(--color-texto-medio);
     font-size: 14px;
 }
 
@@ -1005,7 +1029,7 @@ textarea:user-invalid {
 .pie-contenido {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 18px;
+    padding: 18px 18px 18px 84px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1139,5 +1163,506 @@ textarea:user-invalid {
 
     .selector select {
         width: 100%;
+    }
+}
+
+/* 15. Ubicación, fotos y contacto en los formularios */
+
+.ubicacion {
+    margin: 0;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--color-borde);
+    border-radius: 12px;
+    min-width: 0;
+}
+
+.ubicacion legend {
+    padding: 0 6px;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.campos-ubicacion {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.nota-fieldset {
+    margin: 0 0 10px;
+    font-size: 13px;
+}
+
+.zona-fotos {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 18px;
+    border: 2px dashed var(--color-acento-medio);
+    border-radius: 12px;
+    background: var(--color-acento-fondo);
+    color: var(--color-principal-hover);
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.zona-fotos:hover,
+.zona-fotos:focus-within {
+    border-color: var(--color-principal);
+}
+
+.zona-fotos input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.vista-fotos {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.vista-fotos:empty {
+    display: none;
+}
+
+.foto-previa {
+    position: relative;
+    width: 110px;
+    height: 110px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--color-borde);
+}
+
+.foto-previa img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.foto-previa button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: #1c1917cc;
+    color: #ffffff;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.tarjeta-ubicacion {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-texto-suave);
+}
+
+.contador-nav {
+    display: inline-block;
+    min-width: 20px;
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--color-error);
+    color: #ffffff;
+    font-size: 12px;
+    text-align: center;
+}
+
+/* 16. Publicaciones de la comunidad */
+
+.lista-publicaciones {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.publicacion {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 20px;
+    padding: 18px;
+}
+
+.galeria {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    align-content: start;
+}
+
+.galeria a:first-child {
+    grid-column: 1 / -1;
+}
+
+.galeria img,
+.galeria .foto-alterna {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 10px;
+    display: block;
+}
+
+.galeria a:first-child img {
+    aspect-ratio: 4 / 3;
+}
+
+.publicacion-cuerpo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.publicacion-cuerpo h3 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.publicacion-encabezado {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.publicacion-cuerpo p {
+    margin: 0;
+}
+
+.decision-publicacion {
+    margin-top: 6px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-borde);
+}
+
+.decision-publicacion .acciones-formulario {
+    margin-top: 10px;
+}
+
+/* 17. Botón y panel de accesibilidad */
+
+.boton-accesibilidad {
+    position: fixed;
+    left: 18px;
+    bottom: 18px;
+    z-index: 50;
+    width: 52px;
+    height: 52px;
+    padding: 10px;
+    border: 3px solid #ffffff;
+    border-radius: 50%;
+    background: #1d4ed8;
+    box-shadow: 0 6px 18px #00000040;
+    cursor: pointer;
+}
+
+.boton-accesibilidad svg {
+    width: 100%;
+    height: 100%;
+    fill: #ffffff;
+}
+
+.boton-accesibilidad:hover {
+    background: #1e40af;
+}
+
+.panel-accesibilidad {
+    position: fixed;
+    left: 18px;
+    bottom: 82px;
+    z-index: 60;
+    width: min(340px, calc(100% - 36px));
+    max-height: calc(100vh - 110px);
+    overflow-y: auto;
+    padding: 18px;
+    border: 1px solid var(--color-borde);
+    border-radius: 16px;
+    background: var(--color-panel);
+    color: var(--color-texto);
+    box-shadow: 0 16px 40px #00000040;
+}
+
+.a11y-grupo {
+    margin: 0 0 14px;
+    padding: 0;
+    border: none;
+}
+
+.a11y-titulo {
+    display: block;
+    margin-bottom: 6px;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--color-texto-suave);
+}
+
+.a11y-tamano {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.a11y-tamano output {
+    min-width: 60px;
+    text-align: center;
+    font-weight: 800;
+}
+
+.a11y-opciones {
+    display: grid;
+    gap: 6px;
+}
+
+.a11y-opcion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-borde);
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.a11y-opcion:has(input:checked) {
+    border-color: var(--color-principal);
+    background: var(--color-acento-fondo);
+}
+
+.a11y-opcion input {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    accent-color: var(--color-principal);
+}
+
+.a11y-fuente-legible {
+    font-family: "Atkinson Hyperlegible", sans-serif;
+}
+
+.a11y-fuente-lectura {
+    font-family: "Lexend", sans-serif;
+}
+
+.a11y-grupo .casilla {
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.a11y-restablecer {
+    width: 100%;
+}
+
+/* 18. Preferencias de accesibilidad aplicadas */
+
+body {
+    zoom: var(--escala);
+}
+
+/* El panel y su botón no cambian de tamaño, para no perderlos de vista */
+.boton-accesibilidad,
+.panel-accesibilidad {
+    zoom: calc(1 / var(--escala));
+}
+
+:root[data-fuente="legible"] body,
+:root[data-fuente="legible"] button,
+:root[data-fuente="legible"] input,
+:root[data-fuente="legible"] select,
+:root[data-fuente="legible"] textarea {
+    font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
+}
+
+:root[data-fuente="lectura"] body,
+:root[data-fuente="lectura"] button,
+:root[data-fuente="lectura"] input,
+:root[data-fuente="lectura"] select,
+:root[data-fuente="lectura"] textarea {
+    font-family: "Lexend", system-ui, sans-serif;
+}
+
+.a11y-espaciado body {
+    line-height: 1.85;
+    letter-spacing: 0.04em;
+    word-spacing: 0.12em;
+}
+
+.a11y-enlaces a {
+    text-decoration: underline !important;
+    text-underline-offset: 3px;
+}
+
+.a11y-enlaces :focus-visible {
+    outline: 4px solid #f59e0b !important;
+    outline-offset: 3px;
+}
+
+.a11y-sin-animaciones *,
+.a11y-sin-animaciones *::before,
+.a11y-sin-animaciones *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+}
+
+.a11y-sin-animaciones .tarjeta:hover {
+    transform: none;
+}
+
+/* Tema oscuro */
+
+:root[data-tema="oscuro"] {
+    --color-principal: #fb923c;
+    --color-principal-hover: #fdba74;
+    --color-principal-suave: #431407;
+    --color-fondo: #1c1917;
+    --color-panel: #292524;
+    --color-texto: #f5f5f4;
+    --color-texto-suave: #a8a29e;
+    --color-texto-medio: #d6d3d1;
+    --color-borde: #44403c;
+    --color-borde-fuerte: #57534e;
+    --color-invertido: #1c1917;
+    --color-suave: #3a3532;
+    --color-suave-2: #44403c;
+    --color-tabla: #24201e;
+    --color-acento-fondo: #2f2117;
+    --color-acento-borde: #7c2d12;
+    --color-acento-medio: #c2410c;
+    --color-cifra: #1c1917cc;
+    --color-foto-fondo: #3a3532;
+    --color-etiqueta: #14532d;
+    --color-peligro-suave: #450a0a;
+    --color-exito: #4ade80;
+    --color-error: #f87171;
+    color-scheme: dark;
+}
+
+:root[data-tema="oscuro"] .boton:not(.boton-secundario):not(.boton-peligro),
+:root[data-tema="oscuro"] .pestana.activa {
+    color: #1c1917;
+}
+
+:root[data-tema="oscuro"] .etiquetas li {
+    color: #bbf7d0;
+}
+
+/* Alto contraste: negro, blanco y amarillo */
+
+:root[data-tema="contraste"] {
+    --color-principal: #ffe600;
+    --color-principal-hover: #ffffff;
+    --color-principal-suave: #000000;
+    --color-fondo: #000000;
+    --color-panel: #000000;
+    --color-texto: #ffffff;
+    --color-texto-suave: #ffffff;
+    --color-texto-medio: #ffffff;
+    --color-borde: #ffffff;
+    --color-borde-fuerte: #ffffff;
+    --color-invertido: #000000;
+    --color-suave: #000000;
+    --color-suave-2: #000000;
+    --color-tabla: #000000;
+    --color-acento-fondo: #000000;
+    --color-acento-borde: #ffffff;
+    --color-acento-medio: #ffe600;
+    --color-cifra: #000000;
+    --color-foto-fondo: #000000;
+    --color-etiqueta: #000000;
+    --color-peligro-suave: #000000;
+    --color-exito: #00ff66;
+    --color-error: #ff6b6b;
+    --sombra: none;
+    color-scheme: dark;
+}
+
+:root[data-tema="contraste"] .presentacion {
+    background: #000000;
+}
+
+:root[data-tema="contraste"] .boton,
+:root[data-tema="contraste"] .pestana.activa,
+:root[data-tema="contraste"] .chip-filtro.activo {
+    background: #ffe600;
+    border: 2px solid #ffe600;
+    color: #000000;
+}
+
+:root[data-tema="contraste"] .boton-secundario,
+:root[data-tema="contraste"] .boton-peligro,
+:root[data-tema="contraste"] .chip-filtro,
+:root[data-tema="contraste"] .boton-acceso {
+    background: #000000;
+    border: 2px solid #ffffff;
+    color: #ffffff;
+}
+
+:root[data-tema="contraste"] .estado,
+:root[data-tema="contraste"] .etiquetas li,
+:root[data-tema="contraste"] .contador {
+    background: #000000;
+    border: 1px solid #ffffff;
+    color: #ffe600;
+}
+
+:root[data-tema="contraste"] a,
+:root[data-tema="contraste"] .tarjeta-nota {
+    color: #ffe600;
+}
+
+:root[data-tema="contraste"] .tarjeta,
+:root[data-tema="contraste"] .panel,
+:root[data-tema="contraste"] input,
+:root[data-tema="contraste"] select,
+:root[data-tema="contraste"] textarea {
+    border: 2px solid #ffffff;
+}
+
+:root[data-tema="contraste"] .tarjeta.adoptada {
+    opacity: 1;
+}
+
+:root[data-tema="contraste"] :focus-visible {
+    outline: 4px solid #00e5ff !important;
+}
+
+/* 19. Adaptación de lo nuevo a celulares */
+
+@media (max-width: 760px) {
+    .campos-ubicacion {
+        grid-template-columns: 1fr;
+    }
+
+    .publicacion {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .boton-accesibilidad {
+        left: 12px;
+        bottom: 12px;
+        width: 46px;
+        height: 46px;
+    }
+
+    .panel-accesibilidad {
+        left: 12px;
+        bottom: 68px;
+        width: calc(100% - 24px);
     }
 }

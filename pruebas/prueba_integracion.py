@@ -12,7 +12,8 @@ Sin argumentos usa las variables de entorno API_MASCOTAS_URL,
 API_ADOPCIONES_URL y CLAVE_ADMIN, o las APIs locales (puertos 8001 y 8000).
 La clave es la misma variable CLAVE_ADMIN configurada en las dos APIs.
 
-La prueba crea tres mascotas de prueba y termina con las tres adoptadas.
+La prueba crea cuatro mascotas de prueba ("Prueba Uno" a "Prueba Cuatro").
+Las tres primeras terminan adoptadas y la cuarta queda publicada.
 """
 
 import os
@@ -40,6 +41,9 @@ CLAVE_ADMIN = (
 
 # Encabezado para las operaciones de la fundación
 FUNDACION = {"X-Clave-Admin": CLAVE_ADMIN}
+
+# Imagen JPEG de 24x24 píxeles para probar la subida de fotos
+FOTO_PRUEBA = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAYABgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDZq0mnXkkIlSBihGRyMkfTrRpiRyahCswUoT0boTjj9cV1deRhsMqqcpM9bE4l0mkkcVRWhriRpqH7sKCVBfH97n/61Fc1SHJJx7HTTnzxUu5n1oJrN2kIjyjEDG9hlqKKIVJQ+F2CdOM/iVzPZizFmJJJySe9FFFQWf/Z"
 
 resultados = []
 base_documento = str(int(time.time()))[-8:]
@@ -107,6 +111,8 @@ def solicitar(id_mascota, nombre, documento=None):
             "documento": documento or nuevo_documento(),
             "correo": "prueba.integracion@example.com",
             "telefono": "3001234567",
+            "pais": "Colombia",
+            "departamento": "Norte de Santander",
             "ciudad": "Cúcuta",
             "tipo_vivienda": "casa",
             "otras_mascotas": False,
@@ -319,6 +325,81 @@ def escenario_aprobaciones_simultaneas():
     )
 
 
+def escenario_publicacion_comunidad():
+    titulo("4. Una persona da una mascota en adopción y la fundación la publica")
+
+    respuesta = requests.post(
+        f"{API_MASCOTAS}/mascotas",
+        json={
+            "nombre": "Prueba Cuatro",
+            "especie": "gato",
+            "raza": "Criolla",
+            "sexo": "hembra",
+            "edad_meses": 9,
+            "tamano": "pequeno",
+            "vacunado": True,
+            "esterilizado": False,
+            "descripcion": "Publicación creada por la prueba de integración automática.",
+            "pais": "Colombia",
+            "departamento": "Norte de Santander",
+            "ciudad": "Villa del Rosario",
+            "contacto": {
+                "nombre": "Natalia Ascanio",
+                "telefono": "3001112233",
+                "correo": "prueba.integracion@example.com"
+            },
+            "fotos": [FOTO_PRUEBA]
+        },
+        timeout=30
+    )
+
+    if not verificar("Enviar la mascota sin clave (público)", respuesta.status_code == 201, mostrar(respuesta)):
+        return
+
+    mascota = respuesta.json()
+    id_mascota = mascota["id_mascota"]
+
+    verificar("Queda 'en_revision' y sin datos de contacto en la respuesta pública",
+              mascota["estado"] == "en_revision" and "contacto" not in mascota)
+
+    foto = requests.get(f"{API_MASCOTAS}{mascota['fotos'][0]}", timeout=30)
+    verificar("La foto subida se puede descargar",
+              foto.ok and foto.headers.get("content-type") == "image/jpeg")
+
+    catalogo = requests.get(f"{API_MASCOTAS}/mascotas", timeout=30).json()
+    verificar("No aparece en el catálogo mientras está en revisión",
+              id_mascota not in [m["id_mascota"] for m in catalogo])
+
+    respuesta = solicitar(id_mascota, "Diego Pacheco")
+    verificar("No recibe solicitudes antes de publicarse (409)",
+              respuesta.status_code == 409, mostrar(respuesta))
+
+    respuesta = requests.patch(f"{API_MASCOTAS}/mascotas/{id_mascota}/publicar", json={}, timeout=30)
+    verificar("Sin la clave no se puede publicar (401)", respuesta.status_code == 401, mostrar(respuesta))
+
+    publicaciones = requests.get(
+        f"{API_MASCOTAS}/publicaciones", headers=FUNDACION, timeout=30
+    ).json()
+    pendiente = next((p for p in publicaciones if p["id_mascota"] == id_mascota), {})
+    verificar("La fundación ve la publicación con el contacto",
+              (pendiente.get("contacto") or {}).get("nombre") == "Natalia Ascanio")
+
+    respuesta = requests.patch(
+        f"{API_MASCOTAS}/mascotas/{id_mascota}/publicar",
+        json={"observacion": "Publicada por la prueba de integración"},
+        headers=FUNDACION,
+        timeout=30
+    )
+    verificar("La fundación la publica", respuesta.status_code == 200, mostrar(respuesta))
+    verificar("Ahora está 'disponible' en el catálogo", estado_mascota(id_mascota) == "disponible")
+
+    respuesta = solicitar(id_mascota, "Diego Pacheco")
+    verificar("Ya recibe solicitudes con país, departamento y ciudad",
+              respuesta.status_code == 201
+              and respuesta.json()["solicitud"]["departamento"] == "Norte de Santander",
+              mostrar(respuesta))
+
+
 # ==================================================
 # 3. EJECUCIÓN
 # ==================================================
@@ -335,6 +416,7 @@ if __name__ == "__main__":
         escenario_adopcion_completa()
         escenario_rechazo_libera_mascota()
         escenario_aprobaciones_simultaneas()
+        escenario_publicacion_comunidad()
 
     correctas = sum(resultados)
     print()

@@ -74,7 +74,7 @@ IdSolicitud = Annotated[
 COLUMNAS = """
     id_solicitud, id_mascota, nombre_solicitante, documento, correo,
     telefono, ciudad, tipo_vivienda, otras_mascotas, motivo, estado,
-    observacion, fecha_solicitud, fecha_respuesta
+    observacion, fecha_solicitud, fecha_respuesta, pais, departamento
 """
 
 
@@ -93,7 +93,15 @@ class Solicitud(BaseModel):
         pattern=r"^\+?\d{7,14}$",
         description="Solo dígitos, con + opcional al inicio"
     )
-    ciudad: str = Field(min_length=3, max_length=60)
+    pais: str = Field(min_length=2, max_length=80)
+    departamento: str = Field(
+        min_length=2, max_length=80,
+        description="Departamento, estado o provincia"
+    )
+    ciudad: str = Field(
+        min_length=2, max_length=80,
+        description="Municipio o ciudad"
+    )
     tipo_vivienda: TipoVivienda
     otras_mascotas: bool = False
     motivo: str = Field(
@@ -110,6 +118,8 @@ class Solicitud(BaseModel):
                     "documento": "1090456789",
                     "correo": "laura.sanjuan@example.com",
                     "telefono": "3104567890",
+                    "pais": "Colombia",
+                    "departamento": "Norte de Santander",
                     "ciudad": "Cúcuta",
                     "tipo_vivienda": "casa",
                     "otras_mascotas": False,
@@ -151,6 +161,10 @@ class MascotaResumen(BaseModel):
     raza: Optional[str] = None
     sexo: Optional[str] = None
     foto_url: Optional[str] = None
+    fotos: list[str] = Field(
+        default=[],
+        description="Rutas de las fotos subidas, relativas a la API de Mascotas"
+    )
 
 
 class SolicitudRespuesta(BaseModel):
@@ -160,6 +174,8 @@ class SolicitudRespuesta(BaseModel):
     documento: str
     correo: str
     telefono: str
+    pais: str
+    departamento: str
     ciudad: str
     tipo_vivienda: TipoVivienda
     otras_mascotas: bool
@@ -214,6 +230,8 @@ def convertir_solicitud(fila, mascota=None):
         "documento": fila[3],
         "correo": fila[4],
         "telefono": fila[5],
+        "pais": fila[14],
+        "departamento": fila[15],
         "ciudad": fila[6],
         "tipo_vivienda": fila[7],
         "otras_mascotas": fila[8],
@@ -279,7 +297,8 @@ def resumir_mascota(mascota):
         "especie": mascota.get("especie"),
         "raza": mascota.get("raza"),
         "sexo": mascota.get("sexo"),
-        "foto_url": mascota.get("foto_url")
+        "foto_url": mascota.get("foto_url"),
+        "fotos": mascota.get("fotos") or []
     }
 
 
@@ -613,9 +632,10 @@ def registrar_solicitud(datos: Solicitud):
             f"""
             INSERT INTO solicitudes_adopcion (
                 id_mascota, nombre_solicitante, documento, correo,
-                telefono, ciudad, tipo_vivienda, otras_mascotas, motivo
+                telefono, pais, departamento, ciudad, tipo_vivienda,
+                otras_mascotas, motivo
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {COLUMNAS};
             """,
             (
@@ -624,6 +644,8 @@ def registrar_solicitud(datos: Solicitud):
                 datos.documento,
                 datos.correo.strip().lower(),
                 datos.telefono,
+                datos.pais.strip(),
+                datos.departamento.strip(),
                 datos.ciudad.strip(),
                 datos.tipo_vivienda,
                 datos.otras_mascotas,
