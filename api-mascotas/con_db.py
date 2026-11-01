@@ -4,7 +4,8 @@ import psycopg2
 def obtener_conexion():
     # En Supabase se puede pegar la cadena de conexión completa
     # (Connect > Transaction pooler) en DATABASE_URL.
-    url = os.getenv("DATABASE_URL")
+    # strip() quita espacios o saltos de línea pegados por error.
+    url = os.getenv("DATABASE_URL", "").strip()
 
     try:
         if url:
