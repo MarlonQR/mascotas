@@ -1,0 +1,104 @@
+﻿Prueba de integración - Plataforma de adopción de mascotas
+API de Mascotas:   https://mascotas-blue.vercel.app
+API de Adopciones: https://mascotas-2pue.vercel.app
+
+0. Los dos servicios responden
+------------------------------
+  [OK   ] API de Mascotas en https://mascotas-blue.vercel.app
+          HTTP 200: API de Mascotas funcionando
+  [OK   ] API de Adopciones en https://mascotas-2pue.vercel.app
+          HTTP 200: API de Adopciones funcionando
+
+1. Proceso completo: solicitudes, rechazo y aprobación
+------------------------------------------------------
+  [OK   ] Registrar mascota en la API de Mascotas
+          HTTP 201: Prueba Uno (#18, disponible)
+  [OK   ] La mascota nueva está disponible
+          HTTP 200: La mascota está disponible para adopción.
+  [OK   ] Registrar solicitud A
+          HTTP 201: Solicitud #1 registrada. La fundación la revisará y te contactará.
+  [OK   ] La API de Adopciones pasó la mascota a 'en_proceso'
+  [OK   ] Registrar solicitudes B y C para la misma mascota
+  [OK   ] La misma persona no puede repetir solicitud pendiente (409)
+          HTTP 409: Ya tienes una solicitud pendiente para esta mascota
+  [OK   ] Sin la clave de la fundación no se puede aprobar (401)
+          HTTP 401: Clave de administrador incorrecta
+  [OK   ] Rechazar la solicitud C
+          HTTP 200: Solicitud #3 rechazada.
+  [OK   ] La mascota sigue 'en_proceso' porque A y B están pendientes
+  [OK   ] Aprobar la solicitud A
+          HTTP 200: Solicitud #1 aprobada. Prueba Uno quedó adoptado.
+  [OK   ] La solicitud B se rechazó automáticamente
+  [OK   ] La API de Mascotas registra la mascota como 'adoptada'
+  [OK   ] No se puede aprobar B después de la adopción (409)
+          HTTP 409: La solicitud ya fue rechazada
+  [OK   ] Una mascota adoptada no recibe solicitudes nuevas (409)
+          HTTP 409: No se puede registrar la solicitud. La mascota ya fue adoptada y no recibe solicitudes.
+  [OK   ] La API de Mascotas también rechaza una segunda adopción (409)
+          HTTP 409: La mascota ya fue adoptada
+  [OK   ] El detalle de la solicitud A trae la mascota desde la API de Mascotas
+          mascota = Prueba Uno (adoptada)
+
+2. Rechazar la única solicitud devuelve la mascota a 'disponible'
+-----------------------------------------------------------------
+  [OK   ] Registrar mascota
+          HTTP 201: Prueba Dos (#19, disponible)
+  [OK   ] Registrar solicitud
+          HTTP 201: Solicitud #5 registrada. La fundación la revisará y te contactará.
+  [OK   ] La mascota pasa a 'en_proceso'
+  [OK   ] Rechazar la solicitud
+          HTTP 200: Solicitud #5 rechazada. Prueba Dos vuelve a estar disponible.
+  [OK   ] La mascota vuelve a 'disponible'
+  [OK   ] Puede recibir una solicitud nueva y ser adoptada
+          HTTP 200: Solicitud #6 aprobada. Prueba Dos quedó adoptado.
+
+3. Dos aprobaciones al mismo tiempo para la misma mascota
+---------------------------------------------------------
+  [OK   ] Registrar mascota
+          HTTP 201: Prueba Tres (#20, disponible)
+  [OK   ] Solo una aprobación tiene éxito y la otra recibe 409
+          códigos recibidos: [200, 409]
+  [OK   ] En la base de datos hay exactamente una solicitud aprobada
+          aprobadas: 1
+
+4. Una persona da una mascota en adopción y la fundación la publica
+-------------------------------------------------------------------
+  [OK   ] Enviar la mascota sin clave (público)
+          HTTP 201: Prueba Cuatro (#21, en_revision)
+  [OK   ] Queda 'en_revision' y sin datos de contacto en la respuesta pública
+  [OK   ] La foto subida se puede descargar
+  [OK   ] No aparece en el catálogo mientras está en revisión
+  [OK   ] No recibe solicitudes antes de publicarse (409)
+          HTTP 409: No se puede registrar la solicitud. La mascota todavía no ha sido publicada por la fundación.
+  [OK   ] Sin la clave no se puede publicar (401)
+          HTTP 401: Clave de administrador incorrecta
+  [OK   ] La fundación ve la publicación con el contacto
+  [OK   ] La fundación la publica
+          HTTP 200: Prueba Cuatro (#21, disponible)
+  [OK   ] Ahora está 'disponible' en el catálogo
+  [OK   ] Ya recibe solicitudes con país, departamento y ciudad
+          HTTP 201: Solicitud #9 registrada. La fundación la revisará y te contactará.
+
+5. La fundación edita y retira una mascota, y consulta las estadísticas
+-----------------------------------------------------------------------
+  [OK   ] Registrar mascota
+          HTTP 201: Prueba Cinco (#22, disponible)
+  [OK   ] Sin la clave no se puede editar (401)
+          HTTP 401: Clave de administrador incorrecta
+  [OK   ] La fundación corrige los datos
+          HTTP 200: Prueba Cinco (#22, disponible)
+  [OK   ] No se puede retirar con solicitudes pendientes (409)
+          HTTP 409: La mascota tiene solicitudes pendientes en la API de Adopciones. Recházalas antes de retirarla.
+  [OK   ] Después de rechazar la solicitud, sí se puede retirar
+          HTTP 200: Prueba Cinco (#22, retirada)
+  [OK   ] La mascota retirada sale del catálogo
+  [OK   ] Una mascota retirada no recibe solicitudes (409)
+          HTTP 409: No se puede registrar la solicitud. La fundación retiró esta mascota del catálogo.
+  [OK   ] La fundación la puede volver a publicar
+          HTTP 200: Prueba Cinco (#22, disponible)
+  [OK   ] Sin la clave no se ven las estadísticas (401)
+          HTTP 401: Clave de administrador incorrecta
+  [OK   ] Las estadísticas cruzan las solicitudes con el catálogo de la API de Mascotas
+          aprobadas: 3 · por especie: {'perro': 3, 'gato': 0}
+
+Resultado: 47 de 47 verificaciones correctas
