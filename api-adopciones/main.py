@@ -342,7 +342,11 @@ def resumir_mascota(mascota):
         "raza": mascota.get("raza"),
         "sexo": mascota.get("sexo"),
         "foto_url": mascota.get("foto_url"),
-        "fotos": mascota.get("fotos") or []
+        "fotos": mascota.get("fotos") or [],
+        # Estos tres solo se usan en los correos; MascotaResumen no los expone
+        "edad_meses": mascota.get("edad_meses"),
+        "tamano": mascota.get("tamano"),
+        "ciudad": mascota.get("ciudad")
     }
 
 
@@ -988,7 +992,7 @@ def aprobar_solicitud(id_solicitud: IdSolicitud, datos: Optional[Aprobacion] = N
 
         # 6. Avisar por correo (la decisión ya quedó guardada)
         aviso = notificar_aprobacion(
-            fila[4], fila[2], id_solicitud, mascota["nombre"], fila[11], otras_solicitudes
+            fila[4], fila[2], id_solicitud, mascota, fila[11], otras_solicitudes
         )
 
         return {
@@ -1113,7 +1117,7 @@ def rechazar_solicitud(id_solicitud: IdSolicitud, datos: Rechazo):
         # 4. Avisar por correo (la decisión ya quedó guardada)
         aviso = notificar_rechazo(
             fila[4], fila[2], id_solicitud,
-            mascota["nombre"] if mascota else "la mascota", fila[11]
+            mascota or {"nombre": "la mascota"}, fila[11]
         )
 
         return {
