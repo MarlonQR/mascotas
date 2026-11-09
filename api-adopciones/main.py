@@ -11,6 +11,7 @@ from fastapi.security import APIKeyHeader
 from psycopg2.errors import UniqueViolation
 from pydantic import BaseModel, Field
 from con_db import obtener_conexion
+from correos import notificar_aprobacion, notificar_rechazo
 
 
 # URL de la API de Mascotas
@@ -885,8 +886,10 @@ def registrar_solicitud(datos: Solicitud):
         "2. Verifica que la mascota no tenga otra adopción aprobada.\n"
         "3. Consulta la disponibilidad en la API de Mascotas.\n"
         "4. Aprueba la solicitud y rechaza las demás pendientes de la misma mascota.\n"
-        "5. Marca la mascota como `adoptada` en la API de Mascotas.\n\n"
-        "Si cualquier paso falla no se guarda ningún cambio. Las operaciones "
+        "5. Marca la mascota como `adoptada` en la API de Mascotas.\n"
+        "6. Avisa por correo a la persona aprobada y a las rechazadas.\n\n"
+        "Si falla alguno de los pasos 1 a 5 no se guarda ningún cambio; un "
+        "fallo en el correo no afecta la decisión. Las operaciones "
         "sobre una misma mascota se ejecutan en fila (bloqueo por mascota) y "
         "un índice único en la base de datos impide dos solicitudes aprobadas "
         "para la misma mascota."
@@ -963,7 +966,7 @@ def aprobar_solicitud(id_solicitud: IdSolicitud, datos: Optional[Aprobacion] = N
                 observacion = %s,
                 fecha_respuesta = NOW()
             WHERE id_mascota = %s AND estado = 'pendiente'
-            RETURNING id_solicitud;
+            RETURNING id_solicitud, nombre_solicitante, correo;
             """,
             (
                 f"Rechazada automáticamente: {disponibilidad['nombre']} "
@@ -972,7 +975,8 @@ def aprobar_solicitud(id_solicitud: IdSolicitud, datos: Optional[Aprobacion] = N
             )
         )
 
-        rechazadas = [registro[0] for registro in cursor.fetchall()]
+        otras_solicitudes = cursor.fetchall()
+        rechazadas = [registro[0] for registro in otras_solicitudes]
 
         # 5. Marcar la mascota como adoptada en la API de Mascotas
         mascota = cambiar_estado_mascota(id_mascota, "adoptada")
@@ -982,10 +986,15 @@ def aprobar_solicitud(id_solicitud: IdSolicitud, datos: Optional[Aprobacion] = N
 
         adoptada = "adoptada" if mascota.get("sexo") == "hembra" else "adoptado"
 
+        # 6. Avisar por correo (la decisión ya quedó guardada)
+        aviso = notificar_aprobacion(
+            fila[4], fila[2], id_solicitud, mascota["nombre"], fila[11], otras_solicitudes
+        )
+
         return {
             "mensaje": (
                 f"Solicitud #{id_solicitud} aprobada. "
-                f"{mascota['nombre']} quedó {adoptada}."
+                f"{mascota['nombre']} quedó {adoptada}.{aviso}"
             ),
             "solicitud": convertir_solicitud(fila, mascota),
             "solicitudes_rechazadas": rechazadas
@@ -1034,8 +1043,9 @@ def aprobar_solicitud(id_solicitud: IdSolicitud, datos: Optional[Aprobacion] = N
     tags=["Gestión"],
     summary="Rechazar una solicitud (requiere clave)",
     description=(
-        "Rechaza una solicitud pendiente. Si la mascota se queda sin "
-        "solicitudes pendientes, la API de Mascotas la devuelve a `disponible`."
+        "Rechaza una solicitud pendiente y le avisa por correo a la persona. "
+        "Si la mascota se queda sin solicitudes pendientes, la API de Mascotas "
+        "la devuelve a `disponible`."
     )
 )
 def rechazar_solicitud(id_solicitud: IdSolicitud, datos: Rechazo):
@@ -1100,8 +1110,14 @@ def rechazar_solicitud(id_solicitud: IdSolicitud, datos: Rechazo):
         else:
             mensaje = f"Solicitud #{id_solicitud} rechazada."
 
+        # 4. Avisar por correo (la decisión ya quedó guardada)
+        aviso = notificar_rechazo(
+            fila[4], fila[2], id_solicitud,
+            mascota["nombre"] if mascota else "la mascota", fila[11]
+        )
+
         return {
-            "mensaje": mensaje,
+            "mensaje": mensaje + aviso,
             "solicitud": convertir_solicitud(fila, mascota),
             "solicitudes_rechazadas": []
         }
